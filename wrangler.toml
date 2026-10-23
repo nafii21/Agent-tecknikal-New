@@ -1,3 +1,7 @@
 name = "agent-tecknikal-new"
 main = "worker.js"
 compatibility_date = "2024-02-26"
+
+[build]
+command = "echo 'Skip Build'"
+cwd = "/"
