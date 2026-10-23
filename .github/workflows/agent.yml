@@ -24,7 +24,7 @@ jobs:
           cache: 'pip'
 
       - name: Install Deps
-        run: pip install -r agent/requirements.txt
+        run: pip install -r bot-reqs.txt
 
       - name: Run Agent
         env:
