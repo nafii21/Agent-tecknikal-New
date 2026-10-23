@@ -1,44 +1,42 @@
 export default {
   async fetch(request, env, ctx) {
-    // ... (biarin kode fetch yang lama buat handle Telegram manual)
     if (request.method !== "POST") return new Response("OK");
     const body = await request.json();
 
     if (body.message && body.message.text === "/start") {
       await sendTelegram(env.TELEGRAM_BOT_TOKEN, body.message.chat.id, 
-        "🏛️ <b>HERMES Universal Bot</b>\n\nSilakan pilih menu:", getMainMenu());
+        "🏛️ <b>HERMES Institutional Bot</b>\n\nSilakan pilih menu:", getMainMenu());
       return new Response("OK");
     }
 
     if (body.callback_query) {
-      // ... (biarin kode callback_query yang lama)
       const cb = body.callback_query;
       const data = cb.data.split("|");
       const chatId = cb.message.chat.id;
+
       await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ callback_query_id: cb.id, text: "Memproses..." })
       });
+
       if (data[0] === "menu" && data[1] === "analisa") {
-        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "Silakan pilih <b>Pair</b>:", getAssetsKeyboard());
-      } else if (data[0] === "menu" && data[1] === "journal") {
+        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
+          "Silakan pilih <b>Pair</b> (Analisa Otomatis MTF):", getAssetsKeyboard());
+      }
+      else if (data[0] === "menu" && data[1] === "journal") {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuka Journal...");
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "journal");
-      } else if (data[0] === "asset") {
-        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, `Anda memilih <b>${data[1]}</b>.\nPilih TF:`, getTFKeyboard(data[1]));
-      } else if (data[0] === "tf") {
-        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, `⏳ Menganalisa <b>${data[1]}</b> [${data[2]}]...`);
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, data[1], data[2], null);
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, "journal");
+      }
+      else if (data[0] === "asset") {
+        const symbol = data[1];
+        // LANGSUNG TEMBAK GITHUB TANPA PILIH TF
+        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
+          `⏳ Menganalisa <b>${symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.`);
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, null);
       }
       return new Response("OK");
     }
     return new Response("OK");
-  },
-
-  // --- INI FUNGSI CRON OTOMATIS DARI CLOUDFLARE ---
-  async scheduled(event, env, ctx) {
-    console.log("Cron job berjalan: Memicu Auto-Scan...");
-    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "cron");
   }
 };
 
@@ -50,15 +48,14 @@ async function sendTelegram(token, chatId, text, replyMarkup = null) {
   });
 }
 
-async function triggerGitHub(token, user, repo, symbol, tf, cmd = null) {
+async function triggerGitHub(token, user, repo, symbol, cmd = null) {
   const inputs = {};
   if (symbol) inputs.symbol = symbol;
-  if (tf) inputs.tf = tf;
   if (cmd) inputs.cmd = cmd;
 
   return await fetch(`https://api.github.com/repos/${user}/${repo}/actions/workflows/agent.yml/dispatches`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json", "User-Agent": "Cloudflare-Worker" },
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json", "User-Agent": "Cloudflare" },
     body: JSON.stringify({ ref: "main", inputs: inputs })
   });
 }
@@ -74,13 +71,5 @@ function getAssetsKeyboard() {
     [{ text: "XAUUSD", callback_data: "asset|XAUUSD" }, { text: "EURUSD", callback_data: "asset|EURUSD" }],
     [{ text: "GBPUSD", callback_data: "asset|GBPUSD" }, { text: "USDJPY", callback_data: "asset|USDJPY" }],
     [{ text: "NASDAQ", callback_data: "asset|NASDAQ" }, { text: "BTCUSD", callback_data: "asset|BTCUSD" }]
-  ]};
-}
-
-function getTFKeyboard(symbol) {
-  return { inline_keyboard: [
-    [{ text: "M5", callback_data: `tf|${symbol}|M5` }, { text: "M15", callback_data: `tf|${symbol}|M15` }],
-    [{ text: "H1", callback_data: `tf|${symbol}|H1` }, { text: "H4", callback_data: `tf|${symbol}|H4` }],
-    [{ text: "D1", callback_data: `tf|${symbol}|D1` }]
   ]};
 }
