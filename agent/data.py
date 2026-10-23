@@ -1,7 +1,16 @@
 import yfinance as yf
 import pandas as pd
 
-SYMBOLS = {"XAUUSD": "GC=F", "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "BTCUSD": "BTC-USD"}
+# TAMBAHAN: NASDAQ pakai ticker NQ=F (Nasdaq 100 Futures)
+SYMBOLS = {
+    "XAUUSD": "GC=F", 
+    "NASDAQ": "NQ=F",  # <--- Ini yang ketinggalan
+    "EURUSD": "EURUSD=X", 
+    "GBPUSD": "GBPUSD=X", 
+    "USDJPY": "JPY=X",
+    "BTCUSD": "BTC-USD"
+}
+
 MACRO_TICKERS = {"DXY": "DX-Y.NYB", "OIL": "CL=F", "US10Y": "^TNX"}
 
 TF_MAP = {
@@ -24,7 +33,7 @@ def fetch_all_data(symbol: str) -> dict:
             if not df.empty:
                 if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
                 data_dict[tf_name] = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-        except:
+        except Exception as e:
             pass
             
     # Ambil data Makro (Fundamental Proxy)
