@@ -1,5 +1,15 @@
 [
   {
+    "timestamp": "2026-10-23 16:57:02",
+    "symbol": "XAUUSD",
+    "action": "SELL_LIMIT",
+    "entry": 4026.5,
+    "sl": 4051.73,
+    "tp": 3975.82,
+    "result": "PENDING",
+    "notes": "Struktur pasar Bearish jelas (Lower High 4034.68, Lower Low 3975.82). Harga saat ini mengonsolidasi di Equilibrium FVG Bearish besar (rentang 4033.16 - 3975.82 dari candle 23 Okt 08:00-12:00). Setup Short presisi pada retest Order Block Bearish (candle 23 Okt 08:00) konfluensi level kunci 4026.50 (Close/Open candle 22 Okt 16:00). SL diletakkan di atas Swing High struktural 4034.68 ditambah buffer volatilitas 1.5x rata-rata body 10 candle terakhir (~17 pts) = 4051.73 untuk menghindari noise. Target Take Profit di Sell-Side Liquidity (SSL) Swing Low 3975.82. Risk:Reward terpenuhi > 1:2."
+  },
+  {
     "timestamp": "2026-10-22 20:03:41",
     "symbol": "XAUUSD",
     "action": "BUY_LIMIT",
