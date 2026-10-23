@@ -14,7 +14,8 @@ def send_tg(text):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
-    parser.add_argument("--tf") # Ini diabaikan, karena kita pakai MTF
+    parser.add_argument("--tf") 
+    parser.add_argument("--cmd") # <--- Tambahan buat nangkep sinyal Cron
     args = parser.parse_args()
 
     if not args.symbol:
@@ -22,7 +23,8 @@ def main():
         return
 
     try:
-        send_tg(f"⏳ Menganalisa <b>{args.symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.")
+        if args.cmd != "cron":
+            send_tg(f"⏳ Menganalisa <b>{args.symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.")
         
         # 1. Ambil Data
         raw_data = fetch_all_data(args.symbol)
@@ -34,7 +36,7 @@ def main():
         decision = analyze(snapshot_text)
         
         if "error" in decision:
-            send_tg(f"❌ {decision['error']}")
+            if args.cmd != "cron": send_tg(f"❌ {decision['error']}")
             return
 
         # 4. Bikin Log Markdown (.md)
@@ -44,19 +46,29 @@ def main():
         
         with open(filename, "w") as f:
             f.write(f"# Analisa {args.symbol} - {time_str}\n\n")
+            f.write(f"## Session\n{decision.get('session_analysis')}\n\n")
             f.write(f"## Narrative\n{decision.get('narrative')}\n\n")
             f.write(f"## Plan A\n{json.dumps(decision.get('plan_a'), indent=2)}\n\n")
             f.write(f"## Plan B\n{json.dumps(decision.get('plan_b'), indent=2)}\n\n")
             f.write(f"## Raw Snapshot\n```\n{snapshot_text}\n```\n")
 
-        # 5. Format Telegram
+        # 5. CEK: KALAU CRON DAN DUA-DUANYA WAIT, JANGAN KIRIM KE TELEGRAM
         plan_a = decision.get("plan_a", {})
         plan_b = decision.get("plan_b", {})
         
+        is_wait_a = plan_a.get("action") == "WAIT"
+        is_wait_b = plan_b.get("action") == "WAIT"
+
+        if args.cmd == "cron" and is_wait_a and is_wait_b:
+            print("Cron: Tidak ada setup valid. Notifikasi tidak dikirim.")
+            return # Berhenti di sini, jangan kirim telegram
+
+        # 6. Format Telegram
         text = (
             f"🏛️ <b>[INSTITUTIONAL FUND MANAGER]</b>\n"
             f"📊 Pair: <b>{args.symbol}</b>\n"
             f"📉 Bias: <b>{decision.get('bias', '-')}</b>\n"
+            f"🕒 <b>Sesi:</b> {decision.get('session_analysis', '-')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🧠 <b>Narrative:</b>\n{decision.get('narrative', '-')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -78,7 +90,7 @@ def main():
         send_tg(text)
 
     except Exception as e:
-        send_tg(f"❌ Gagal: {str(e)}")
+        if args.cmd != "cron": send_tg(f"❌ Gagal: {str(e)}")
 
 if __name__ == "__main__":
     main()
