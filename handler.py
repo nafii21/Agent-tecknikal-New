@@ -1,142 +1,82 @@
 import os, argparse, httpx, json, pandas as pd
-from datetime import datetime, timedelta
-from agent.data import fetch_data
+from datetime import datetime
+from agent.data import fetch_all_data
+from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze
-from agent.charting import generate_chart
-from agent.journal import get_journals, add_journal, get_monthly_stats, has_active_setup
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_tg(text):
     if TOKEN and CHAT_ID:
-        httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=15)
-
-def send_photo(path, caption):
-    if TOKEN and CHAT_ID:
-        with open(path, "rb") as f:
-            httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"photo": f}, timeout=30)
-
-def to_wib(utc_str):
-    """Fungsi buat ngubah jam UTC ke WIB (UTC+7)"""
-    try:
-        dt_utc = datetime.strptime(utc_str, "%Y-%m-%d %H:%M:%S")
-        dt_wib = dt_utc + timedelta(hours=7)
-        return dt_wib.strftime("%Y-%m-%d %H:%M WIB")
-    except:
-        return utc_str
+        httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=30)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
-    parser.add_argument("--tf")
-    parser.add_argument("--cmd")
+    parser.add_argument("--tf") # Ini diabaikan, karena kita pakai MTF
     args = parser.parse_args()
 
-    # --- FITUR LIHAT JOURNAL ---
-    if args.cmd == "journal":
-        rows = get_journals()
-        stats = get_monthly_stats()
-        if not rows:
-            send_tg("📖 Belum ada catatan journal.")
-        else:
-            txt = f"📊 <b>PERFORMA BULAN {stats['month'].upper()}</b>\n✅ TP: <b>{stats['tp']}</b> | ❌ SL: <b>{stats['sl']}</b>\n🎯 Winrate: <b>{stats['winrate']}%</b>\n━━━━━━━━━━━━━━━━━━\n📖 <b>5 Catatan Terakhir:</b>\n"
-            for r in rows:
-                wib_time = to_wib(r.get('timestamp', '-'))
-                txt += (
-                    f"\n📅 {wib_time}\n"
-                    f"💱 {r.get('symbol', '-')} | {r.get('action', '-')}\n"
-                    f"📍 Entry: {r.get('entry', '-')} | SL: {r.get('sl', '-')} | TP: {r.get('tp', '-')}\n"
-                    f"🏆 Status: <b>{r.get('result', '-')}</b>\n"
-                    f"📝 {r.get('notes', '-')[:100]}...\n"
-                )
-            send_tg(txt)
-        return
-
-    # --- FITUR AUTO-SCAN (CRON JOB) ---
-    if args.cmd == "cron":
-        targets = [("XAUUSD", "M15"), ("NASDAQ", "M15")]
-        for symbol, tf in targets:
-            if has_active_setup(symbol):
-                print(f"[{symbol}] Setup masih PENDING. Skip.")
-                continue
-            
-            try:
-                df = fetch_data(symbol, tf)
-                decision = analyze(df)
-                action = decision.get("action", "WAIT")
-                
-                if action in ("BUY_LIMIT", "SELL_LIMIT"):
-                    entry, sl, tp = decision.get('entry_price', 0), decision.get('sl', 0), decision.get('tp', 0)
-                    reason = decision.get('reason', '-')
-                    
-                    add_journal(symbol, action, entry, sl, tp, "PENDING", reason)
-                    
-                    emoji = "🟢" if action == "BUY_LIMIT" else "🔴"
-                    text = (
-                        f"⚡ <b>[AUTO-SCAN HERMES]</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"📊 Pair: <b>{symbol}</b> [{tf}]\n"
-                        f"💰 Harga Saat Ini: <code>{float(df['close'].iloc[-1])}</code>\n"
-                        f"🎯 Action: <b>{emoji} {action}</b>\n"
-                        f"📍 Entry: <code>{entry}</code>\n"
-                        f"🛑 SL: <code>{sl}</code>\n"
-                        f"💎 TP: <code>{tp}</code>\n"
-                        f"📊 RR: <b>{decision.get('rr', '-')}</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"💡 <b>Reason:</b>\n{reason}\n"
-                    )
-                    chart = generate_chart(df, decision, symbol, tf)
-                    if chart and os.path.exists(chart): send_photo(chart, text)
-                    else: send_tg(text)
-                else:
-                    print(f"[{symbol}] WAIT. Notifikasi tidak dikirim.")
-            except Exception as e:
-                print(f"[{symbol}] Error: {str(e)}")
-        return
-
-    # --- FITUR MANUAL (DARI TELEGRAM) ---
-    if not args.symbol or not args.tf:
-        send_tg("❌ Parameter Pair atau Timeframe kosong.")
+    if not args.symbol:
+        send_tg("❌ Pair kosong.")
         return
 
     try:
-        df = fetch_data(args.symbol, args.tf)
-        current_price = float(df["close"].iloc[-1])
-        decision = analyze(df)
-        action = decision.get("action", "WAIT")
-        emoji = "🟢" if action == "BUY_LIMIT" else "🔴" if action == "SELL_LIMIT" else "⚪"
+        send_tg(f"⏳ Menganalisa <b>{args.symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.")
         
-        if action != "WAIT":
-            entry, sl, tp = decision.get('entry_price', 0), decision.get('sl', 0), decision.get('tp', 0)
-            reason = decision.get('reason', '-')
-            add_journal(args.symbol, action, entry, sl, tp, "PENDING", reason)
-            
-            text = (
-                f"⚡ <b>[HERMES SNIPER MANUAL]</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"📊 Pair: <b>{args.symbol}</b> [{args.tf}]\n"
-                f"💰 Harga Saat Ini: <code>{current_price}</code>\n"
-                f"🎯 Action: <b>{emoji} {action}</b>\n"
-                f"📍 Entry: <code>{entry}</code>\n"
-                f"🛑 SL: <code>{sl}</code>\n"
-                f"💎 TP: <code>{tp}</code>\n"
-                f"📊 RR: <b>{decision.get('rr', '-')}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"💡 <b>Reason:</b>\n{reason}"
-            )
-            chart = generate_chart(df, decision, args.symbol, args.tf)
-            if chart and os.path.exists(chart): send_photo(chart, text)
-            else: send_tg(text)
-        else:
-            text = (
-                f"⚪ <b>[HERMES SNIPER - WAIT]</b>\n"
-                f"📊 Pair: <b>{args.symbol}</b> [{args.tf}]\n"
-                f"💰 Harga Saat Ini: <code>{current_price}</code>\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"💡 <b>Reason:</b>\n{decision.get('reason', '-')}\n"
-            )
-            send_tg(text)
+        # 1. Ambil Data
+        raw_data = fetch_all_data(args.symbol)
+        
+        # 2. Bikin Snapshot
+        snapshot_text = generate_snapshot(args.symbol, raw_data)
+        
+        # 3. Analisa AI
+        decision = analyze(snapshot_text)
+        
+        if "error" in decision:
+            send_tg(f"❌ {decision['error']}")
+            return
+
+        # 4. Bikin Log Markdown (.md)
+        os.makedirs("log_analisa", exist_ok=True)
+        time_str = datetime.now().strftime("%Y-%m-%d_%H%M")
+        filename = f"log_analisa/{time_str}.md"
+        
+        with open(filename, "w") as f:
+            f.write(f"# Analisa {args.symbol} - {time_str}\n\n")
+            f.write(f"## Narrative\n{decision.get('narrative')}\n\n")
+            f.write(f"## Plan A\n{json.dumps(decision.get('plan_a'), indent=2)}\n\n")
+            f.write(f"## Plan B\n{json.dumps(decision.get('plan_b'), indent=2)}\n\n")
+            f.write(f"## Raw Snapshot\n```\n{snapshot_text}\n```\n")
+
+        # 5. Format Telegram
+        plan_a = decision.get("plan_a", {})
+        plan_b = decision.get("plan_b", {})
+        
+        text = (
+            f"🏛️ <b>[INSTITUTIONAL FUND MANAGER]</b>\n"
+            f"📊 Pair: <b>{args.symbol}</b>\n"
+            f"📉 Bias: <b>{decision.get('bias', '-')}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🧠 <b>Narrative:</b>\n{decision.get('narrative', '-')}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 <b>PLAN A (Utama):</b>\n"
+            f"Action: {plan_a.get('action')}\n"
+            f"Entry: {plan_a.get('entry')} | SL: {plan_a.get('sl')}\n"
+            f"TP1: {plan_a.get('tp1')} | TP2: {plan_a.get('tp2')}\n"
+            f"Batal jika: {plan_a.get('invalidation')}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 <b>PLAN B (Cadangan):</b>\n"
+            f"Action: {plan_b.get('action')}\n"
+            f"Entry: {plan_b.get('entry')} | SL: {plan_b.get('sl')}\n"
+            f"TP1: {plan_b.get('tp1')} | TP2: {plan_b.get('tp2')}\n"
+            f"Batal jika: {plan_b.get('invalidation')}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📝 <i>Log tersimpan di {filename}</i>"
+        )
+        
+        send_tg(text)
+
     except Exception as e:
         send_tg(f"❌ Gagal: {str(e)}")
 
