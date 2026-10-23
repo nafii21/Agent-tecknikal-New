@@ -21,7 +21,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          # <--- Baris cache: 'pip' UDAH GW HAPUS DI SINI
 
       - name: Install Deps
         run: pip install -r bot-reqs.txt
@@ -32,7 +31,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python handler.py --symbol "${{ github.event.inputs.symbol }}" --tf "MTF"
+          python handler.py --symbol "${{ github.event.inputs.symbol }}" --tf "MTF" --cmd "${{ github.event.inputs.cmd }}"
 
       - name: Commit Log Updates
         run: |
