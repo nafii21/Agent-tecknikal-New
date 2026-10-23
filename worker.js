@@ -23,13 +23,8 @@ export default {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
           "Silakan pilih <b>Pair</b> (Analisa Otomatis MTF):", getAssetsKeyboard());
       }
-      else if (data[0] === "menu" && data[1] === "journal") {
-        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuka Journal...");
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, "journal");
-      }
       else if (data[0] === "asset") {
         const symbol = data[1];
-        // LANGSUNG TEMBAK GITHUB TANPA PILIH TF
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
           `⏳ Menganalisa <b>${symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.`);
         await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, null);
@@ -37,6 +32,13 @@ export default {
       return new Response("OK");
     }
     return new Response("OK");
+  },
+
+  // FUNGSI CRON OTOMATIS
+  async scheduled(event, env, ctx) {
+    console.log("Cron berjalan: Memicu analisa otomatis...");
+    // Lo bisa nambahin pair lain di sini nanti, misal NASDAQ
+    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", "cron");
   }
 };
 
@@ -62,7 +64,7 @@ async function triggerGitHub(token, user, repo, symbol, cmd = null) {
 
 function getMainMenu() {
   return { inline_keyboard: [
-    [{ text: "📊 1. Analisa Market", callback_data: "menu|analisa" }, { text: "📖 2. Journal", callback_data: "menu|journal" }]
+    [{ text: "📊 1. Analisa Market", callback_data: "menu|analisa" }]
   ]};
 }
 
