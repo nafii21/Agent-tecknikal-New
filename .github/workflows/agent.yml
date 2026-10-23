@@ -1,10 +1,10 @@
-name: Hermes Universal Agent
+name: Institutional Bot
 
 on:
   workflow_dispatch:
     inputs:
-      symbol: { description: 'Pair', required: false }
-      tf: { description: 'Timeframe', required: false }
+      symbol: { description: 'Pair', required: true }
+      tf: { description: 'TF (Abaikan)', required: false }
       cmd: { description: 'Command', required: false }
 
 jobs:
@@ -13,14 +13,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -30,18 +28,16 @@ jobs:
 
       - name: Run Agent
         env:
-          # --- BALIK KE OPENROUTER ---
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
-          python handler.py --symbol "${{ github.event.inputs.symbol }}" --tf "${{ github.event.inputs.tf }}" --cmd "${{ github.event.inputs.cmd }}"
+          python handler.py --symbol "${{ github.event.inputs.symbol }}" --tf "MTF"
 
-      - name: Commit Updates
+      - name: Commit Log Updates
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "GitHub Actions Bot"
-          git add journal.json active_setups.json || true
-          git commit -m "Update auto-journal [skip ci]" || echo "Tidak ada perubahan baru"
+          git add log_analisa/ || true
+          git commit -m "Update log analisa [skip ci]" || echo "Tidak ada log baru"
           git push || true
