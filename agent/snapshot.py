@@ -2,20 +2,16 @@ import pandas as pd
 import pandas_ta_classic as ta
 from datetime import datetime
 import pytz
+from agent.news import get_market_news # <--- IMPORT FUNGSI BERITA
 
 def get_market_session():
     now_utc = datetime.now(pytz.utc)
     hour = now_utc.hour
-    if 0 <= hour < 7:
-        return "ASIA (Tokyo)"
-    elif 7 <= hour < 12:
-        return "LONDON"
-    elif 12 <= hour < 16:
-        return "OVERLAP (London & New York) - HIGH VOLATILITY"
-    elif 16 <= hour < 21:
-        return "NEW YORK"
-    else:
-        return "AFTER HOURS (Low Liquidity)"
+    if 0 <= hour < 7: return "ASIA (Tokyo)"
+    elif 7 <= hour < 12: return "LONDON"
+    elif 12 <= hour < 16: return "OVERLAP (London & New York) - HIGH VOLATILITY"
+    elif 16 <= hour < 21: return "NEW YORK"
+    else: return "AFTER HOURS (Low Liquidity)"
 
 def generate_snapshot(symbol: str, raw_data: dict) -> str:
     main_data = raw_data["main"]
@@ -51,19 +47,19 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
             prev = df.iloc[-2]
             p = (prev['high'] + prev['low'] + prev['close']) / 3
             r1, s1 = (2*p) - prev['low'], (2*p) - prev['high']
-            r2, s2 = p + (prev['high'] - prev['low']), p - (prev['high'] - prev['low'])
             fibo_50 = (prev['high'] + prev['low']) / 2
             
             report += f"\n[ LEVEL KUNCI D1 ]\nPivot: {p:.2f} | R1: {r1:.2f} | S1: {s1:.2f}\n"
-            report += f"Fibo 50% (Sweet Spot): {fibo_50:.2f} | Prev High: {prev['high']:.2f} | Prev Low: {prev['low']:.2f}\n\n"
-            
-        recent = df.tail(5)[['open', 'high', 'low', 'close']].round(2).to_dict('records')
-        report += f"Last 5 Candles: {recent}\n\n"
+            report += f"Fibo 50% (Sweet Spot): {fibo_50:.2f}\n\n"
 
     # 2. Konteks Makro
     report += "===== KONTEKS MAKRO (FUNDAMENTAL) =====\n"
     if "DXY" in macro: report += f"DXY (Dollar): {macro['DXY']['price']} ({macro['DXY']['change_pct']:+.2f}%)\n"
     if "US10Y" in macro: report += f"US10Y (Bond Yield): {macro['US10Y']['price']}% ({macro['US10Y']['change_pct']:+.2f}%)\n"
-    if "OIL" in macro: report += f"Oil (Brent): {macro['OIL']['price']} ({macro['OIL']['change_pct']:+.2f}%)\n"
+    if "OIL" in macro: report += f"Oil (Brent): {macro['OIL']['price']} ({macro['OIL']['change_pct']:+.2f}%)\n\n"
+    
+    # 3. Tambahin Berita Web Search
+    news_text = get_market_news(symbol)
+    report += news_text
     
     return report
