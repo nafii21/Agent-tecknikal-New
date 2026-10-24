@@ -37,14 +37,33 @@ def main():
     parser.add_argument("--cmd")
     args = parser.parse_args()
 
-    # --- FITUR JOURNAL (Dipanggil pas klik tombol Journal) ---
+    # --- FITUR JOURNAL ---
     if args.cmd == "journal":
         history = load_history()
         if not history:
             send_tg("📖 Belum ada catatan journal (trades_history.json kosong).")
             return
         
-        txt = "📖 <b>5 Catatan Journal Terakhir:</b>\n"
+        # Itung Statistik
+        total = len(history)
+        wins = sum(1 for x in history if "WIN" in x.get('status', ''))
+        losses = sum(1 for x in history if "LOSS" in x.get('status', ''))
+        missed = sum(1 for x in history if "MISSED" in x.get('status', ''))
+        pending = sum(1 for x in history if x.get('status') == 'PENDING')
+        expired = sum(1 for x in history if x.get('status') == 'EXPIRED')
+        
+        closed = wins + losses
+        winrate = (wins / closed * 100) if closed > 0 else 0
+        
+        txt = (
+            f"📊 <b>PERFORMA TRADING (Total: {total})</b>\n"
+            f"✅ Win: <b>{wins}</b> | ❌ Loss: <b>{losses}</b> | ⏳ Pending: <b>{pending}</b>\n"
+            f"⚠️ Missed: {missed} | ⏰ Expired: {expired}\n"
+            f"🎯 Winrate: <b>{winrate:.1f}%</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📖 <b>5 Catatan Journal Terakhir:</b>\n"
+        )
+        
         for r in history[:5]: # Ambil 5 teratas
             txt += (
                 f"\n📅 {r.get('timestamp', '-')[:16]} WIB\n"
@@ -57,7 +76,7 @@ def main():
         send_tg(txt)
         return
 
-    # --- FITUR ANALISA MARKET (Butuh Symbol) ---
+    # --- FITUR ANALISA MARKET ---
     if not args.symbol: return
 
     try:
