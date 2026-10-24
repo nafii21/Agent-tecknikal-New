@@ -1,12 +1,15 @@
+```python
 import json, os
 from openai import OpenAI
 
+# --- PINDAH KE SAKELAR ---
 client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ.get("OPENROUTER_API_KEY", "")
+    base_url="https://api.sakelar.web.id/v1", 
+    api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
 
-MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# GANTI DENGAN NAMA MODEL YANG LO PILIH DI SAKELAR
+MODEL = "deepseek-v4.1-flash" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Fund Manager" dengan gaya Dynamic Entry.
