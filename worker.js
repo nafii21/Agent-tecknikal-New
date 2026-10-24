@@ -3,12 +3,14 @@ export default {
     if (request.method !== "POST") return new Response("OK");
     const body = await request.json();
 
+    // 1. Handle command /start
     if (body.message && body.message.text === "/start") {
       await sendTelegram(env.TELEGRAM_BOT_TOKEN, body.message.chat.id, 
         "🏛️ <b>HERMES Institutional Bot</b>\n\nSilakan pilih menu:", getMainMenu());
       return new Response("OK");
     }
 
+    // 2. Handle Tombol (Callback Query)
     if (body.callback_query) {
       const cb = body.callback_query;
       const data = cb.data.split("|");
@@ -19,13 +21,13 @@ export default {
         body: JSON.stringify({ callback_query_id: cb.id, text: "Memproses..." })
       });
 
-      // Menu Analisa (Pilih Model Dulu)
+      // Menu Analisa (Pilih Model)
       if (data[0] === "menu" && data[1].startsWith("analisa")) {
         const model = data[1] === "analisa_deepseek" ? "deepseek" : "nemotron";
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
           `Silakan pilih <b>Pair</b> (Analisa ${model.toUpperCase()}):`, getAssetsKeyboard(model));
       }
-      // Pilih Pair -> Tembak GitHub (Bawa nama model)
+      // Pilih Pair -> Tembak GitHub
       else if (data[0] === "asset") {
         const symbol = data[1];
         const model = data[2];
@@ -33,18 +35,47 @@ export default {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
           `⏳ Menganalisa <b>${symbol}</b> pakai <b>${model.toUpperCase()}</b>...\nMohon tunggu.`);
         
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, model);
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, model, null);
       }
-      // Journal
+      // Menu Journal
       else if (data[0] === "menu" && data[1] === "journal") {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuka Journal...");
         await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "journal");
       }
+      // Menu Statistik & CSV
+      else if (data[0] === "menu" && data[1] === "stats") {
+        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuat laporan dan grafik Winrate...");
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "stats");
+      }
+      
       return new Response("OK");
     }
     return new Response("OK");
+  },
+
+  // 3. FUNGSI CRON OTOMATIS
+  async scheduled(event, env, ctx) {
+    const today = new Date().getUTCDay();
+    
+    // Libur di hari Sabtu (6) dan Minggu (0)
+    if (today === 0 || today === 6) {
+      console.log("Akhir pekan: Market tutup. Bot libur.");
+      return; 
+    }
+
+    console.log("Hari kerja: Memicu Auto-Scan...");
+    
+    // --- SETINGAN CRON ---
+    // Pilih model: "deepseek" atau "nemotron"
+    const cronModel = "deepseek"; 
+    
+    // Lo bisa tambahin pair lain di sini kalau mau (misal: ["XAUUSD", "BTCUSD"])
+    // Tapi karena sekarang fokus XAUUSD, kita biarin satu aja.
+    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", cronModel, "cron");
   }
 };
+
+// --- FUNGSI BANTUAN ---
 
 async function sendTelegram(token, chatId, text, replyMarkup = null) {
   const payload = { chat_id: chatId, text: text, parse_mode: "HTML" };
@@ -54,7 +85,7 @@ async function sendTelegram(token, chatId, text, replyMarkup = null) {
   });
 }
 
-async function triggerGitHub(token, user, repo, symbol, model = null, cmd = null) {
+async function triggerGitHub(token, user, repo, symbol = null, model = null, cmd = null) {
   const inputs = {};
   if (symbol) inputs.symbol = symbol;
   if (model) inputs.model = model;
@@ -62,21 +93,28 @@ async function triggerGitHub(token, user, repo, symbol, model = null, cmd = null
 
   return await fetch(`https://api.github.com/repos/${user}/${repo}/actions/workflows/agent.yml/dispatches`, {
     method: "POST",
-    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/vnd.github+json", "User-Agent": "Cloudflare" },
+    headers: { 
+      "Authorization": `Bearer ${token}`, 
+      "Accept": "application/vnd.github+json", 
+      "User-Agent": "Cloudflare-Worker" 
+    },
     body: JSON.stringify({ ref: "main", inputs: inputs })
   });
 }
 
+// --- FUNGSI KEYBOARD TELEGRAM ---
+
 function getMainMenu() {
   return { inline_keyboard: [
     [{ text: "🧠 Analisa (DeepSeek)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
-    [{ text: "📖 Journal", callback_data: "menu|journal" }]
+    [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }]
   ]};
 }
 
 function getAssetsKeyboard(model) {
   return { inline_keyboard: [
     [{ text: "XAUUSD", callback_data: `asset|XAUUSD|${model}` }, { text: "BTCUSD", callback_data: `asset|BTCUSD|${model}` }],
-    [{ text: "NASDAQ", callback_data: `asset|NASDAQ|${model}` }, { text: "EURUSD", callback_data: `asset|EURUSD|${model}` }]
+    [{ text: "NASDAQ", callback_data: `asset|NASDAQ|${model}` }, { text: "EURUSD", callback_data: `asset|EURUSD|${model}` }],
+    [{ text: "GBPUSD", callback_data: `asset|GBPUSD|${model}` }, { text: "USDJPY", callback_data: `asset|USDJPY|${model}` }]
   ]};
 }
