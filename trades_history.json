@@ -1,5 +1,29 @@
 [
   {
+    "timestamp": "2026-10-24 11:06:48",
+    "symbol": "NASDAQ",
+    "plan_type": "Session",
+    "action": "SELL_LIMIT",
+    "entry_min": 29160.0,
+    "entry_max": 29170.0,
+    "sl": 29245.0,
+    "tp1": 28990.0,
+    "tp2": 28785.0,
+    "status": "PENDING"
+  },
+  {
+    "timestamp": "2026-10-24 11:06:48",
+    "symbol": "NASDAQ",
+    "plan_type": "Daily",
+    "action": "SELL_LIMIT",
+    "entry_min": 29240.0,
+    "entry_max": 29260.0,
+    "sl": 29420.0,
+    "tp1": 28880.0,
+    "tp2": 28785.0,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-10-24 10:51:15",
     "symbol": "NASDAQ",
     "plan_type": "Session",
