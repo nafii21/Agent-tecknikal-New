@@ -4,7 +4,7 @@ from datetime import datetime
 from agent.data import fetch_all_data
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze_deepseek, analyze_nemotron
-from agent.memory import get_memory_summary, add_setup
+from agent.memory import get_memory_summary, add_setup, load_history
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -15,7 +15,6 @@ def clean_html(text):
 
 def send_tg(text):
     if TOKEN and CHAT_ID:
-        # Batasi panjang teks
         if len(text) > 4000:
             text = text[:4000] + "\n\n<i>... (Pesan dipotong)</i>"
             
@@ -38,6 +37,27 @@ def main():
     parser.add_argument("--cmd")
     args = parser.parse_args()
 
+    # --- FITUR JOURNAL (Dipanggil pas klik tombol Journal) ---
+    if args.cmd == "journal":
+        history = load_history()
+        if not history:
+            send_tg("📖 Belum ada catatan journal (trades_history.json kosong).")
+            return
+        
+        txt = "📖 <b>5 Catatan Journal Terakhir:</b>\n"
+        for r in history[:5]: # Ambil 5 teratas
+            txt += (
+                f"\n📅 {r.get('timestamp', '-')[:16]} WIB\n"
+                f"💱 {r.get('symbol', '-')} | {r.get('plan_type', '-')} | {r.get('action', '-')}\n"
+                f"📍 Entry: {r.get('entry_min', '-')} - {r.get('entry_max', '-')}\n"
+                f"🛑 SL: {r.get('sl', '-')} | 💎 TP: {r.get('tp1', '-')}\n"
+                f"🏆 Status: <b>{r.get('status', '-')}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━"
+            )
+        send_tg(txt)
+        return
+
+    # --- FITUR ANALISA MARKET (Butuh Symbol) ---
     if not args.symbol: return
 
     try:
@@ -79,7 +99,7 @@ def main():
             print("Cron: Tidak ada setup valid.")
             return
 
-        # --- FORMATTING TELEGRAM YANG LEBIH RAPI ---
+        # --- FORMATTING TELEGRAM ---
         def format_plan(plan, title):
             if plan.get("action") == "WAIT": 
                 return f"⏳ <b>{title}</b>\n└ Status: WAIT\n"
