@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
     parser.add_argument("--tf") 
-    parser.add_argument("--cmd") # <--- Tambahan buat nangkep sinyal Cron
+    parser.add_argument("--cmd")
     args = parser.parse_args()
 
     if not args.symbol:
@@ -48,11 +48,12 @@ def main():
             f.write(f"# Analisa {args.symbol} - {time_str}\n\n")
             f.write(f"## Session\n{decision.get('session_analysis')}\n\n")
             f.write(f"## Narrative\n{decision.get('narrative')}\n\n")
+            f.write(f"## Key Levels\n{decision.get('key_levels')}\n\n")
             f.write(f"## Plan A\n{json.dumps(decision.get('plan_a'), indent=2)}\n\n")
             f.write(f"## Plan B\n{json.dumps(decision.get('plan_b'), indent=2)}\n\n")
             f.write(f"## Raw Snapshot\n```\n{snapshot_text}\n```\n")
 
-        # 5. CEK: KALAU CRON DAN DUA-DUANYA WAIT, JANGAN KIRIM KE TELEGRAM
+        # 5. Cek WAIT buat Cron
         plan_a = decision.get("plan_a", {})
         plan_b = decision.get("plan_b", {})
         
@@ -61,9 +62,9 @@ def main():
 
         if args.cmd == "cron" and is_wait_a and is_wait_b:
             print("Cron: Tidak ada setup valid. Notifikasi tidak dikirim.")
-            return # Berhenti di sini, jangan kirim telegram
+            return
 
-        # 6. Format Telegram
+        # 6. Format Telegram (Dengan Key Levels & Trigger)
         text = (
             f"🏛️ <b>[INSTITUTIONAL FUND MANAGER]</b>\n"
             f"📊 Pair: <b>{args.symbol}</b>\n"
@@ -72,16 +73,20 @@ def main():
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🧠 <b>Narrative:</b>\n{decision.get('narrative', '-')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
+            f"📌 <b>Key Levels:</b>\n{decision.get('key_levels', '-')}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"🎯 <b>PLAN A (Utama):</b>\n"
             f"Action: {plan_a.get('action')}\n"
             f"Entry: {plan_a.get('entry')} | SL: {plan_a.get('sl')}\n"
             f"TP1: {plan_a.get('tp1')} | TP2: {plan_a.get('tp2')}\n"
+            f"⚡ Trigger: {plan_a.get('trigger_entry', '-')}\n"
             f"Batal jika: {plan_a.get('invalidation')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🎯 <b>PLAN B (Cadangan):</b>\n"
             f"Action: {plan_b.get('action')}\n"
             f"Entry: {plan_b.get('entry')} | SL: {plan_b.get('sl')}\n"
             f"TP1: {plan_b.get('tp1')} | TP2: {plan_b.get('tp2')}\n"
+            f"⚡ Trigger: {plan_b.get('trigger_entry', '-')}\n"
             f"Batal jika: {plan_b.get('invalidation')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📝 <i>Log tersimpan di {filename}</i>"
