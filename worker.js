@@ -19,26 +19,30 @@ export default {
         body: JSON.stringify({ callback_query_id: cb.id, text: "Memproses..." })
       });
 
-      if (data[0] === "menu" && data[1] === "analisa") {
+      // Menu Analisa (Pilih Model Dulu)
+      if (data[0] === "menu" && data[1].startsWith("analisa")) {
+        const model = data[1] === "analisa_deepseek" ? "deepseek" : "nemotron";
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
-          "Silakan pilih <b>Pair</b> (Analisa Otomatis MTF):", getAssetsKeyboard());
+          `Silakan pilih <b>Pair</b> (Analisa ${model.toUpperCase()}):`, getAssetsKeyboard(model));
       }
+      // Pilih Pair -> Tembak GitHub (Bawa nama model)
       else if (data[0] === "asset") {
         const symbol = data[1];
+        const model = data[2];
+        
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
-          `⏳ Menganalisa <b>${symbol}</b> (MTF + Fundamental)...\nMohon tunggu 1-2 menit.`);
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, null);
+          `⏳ Menganalisa <b>${symbol}</b> pakai <b>${model.toUpperCase()}</b>...\nMohon tunggu.`);
+        
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, model);
+      }
+      // Journal
+      else if (data[0] === "menu" && data[1] === "journal") {
+        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuka Journal...");
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "journal");
       }
       return new Response("OK");
     }
     return new Response("OK");
-  },
-
-  // FUNGSI CRON OTOMATIS
-  async scheduled(event, env, ctx) {
-    console.log("Cron berjalan: Memicu analisa otomatis...");
-    // Lo bisa nambahin pair lain di sini nanti, misal NASDAQ
-    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", "cron");
   }
 };
 
@@ -50,9 +54,10 @@ async function sendTelegram(token, chatId, text, replyMarkup = null) {
   });
 }
 
-async function triggerGitHub(token, user, repo, symbol, cmd = null) {
+async function triggerGitHub(token, user, repo, symbol, model = null, cmd = null) {
   const inputs = {};
   if (symbol) inputs.symbol = symbol;
+  if (model) inputs.model = model;
   if (cmd) inputs.cmd = cmd;
 
   return await fetch(`https://api.github.com/repos/${user}/${repo}/actions/workflows/agent.yml/dispatches`, {
@@ -64,14 +69,14 @@ async function triggerGitHub(token, user, repo, symbol, cmd = null) {
 
 function getMainMenu() {
   return { inline_keyboard: [
-    [{ text: "📊 1. Analisa Market", callback_data: "menu|analisa" }]
+    [{ text: "🧠 Analisa (DeepSeek)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
+    [{ text: "📖 Journal", callback_data: "menu|journal" }]
   ]};
 }
 
-function getAssetsKeyboard() {
+function getAssetsKeyboard(model) {
   return { inline_keyboard: [
-    [{ text: "XAUUSD", callback_data: "asset|XAUUSD" }, { text: "EURUSD", callback_data: "asset|EURUSD" }],
-    [{ text: "GBPUSD", callback_data: "asset|GBPUSD" }, { text: "USDJPY", callback_data: "asset|USDJPY" }],
-    [{ text: "NASDAQ", callback_data: "asset|NASDAQ" }, { text: "BTCUSD", callback_data: "asset|BTCUSD" }]
+    [{ text: "XAUUSD", callback_data: `asset|XAUUSD|${model}` }, { text: "BTCUSD", callback_data: `asset|BTCUSD|${model}` }],
+    [{ text: "NASDAQ", callback_data: `asset|NASDAQ|${model}` }, { text: "EURUSD", callback_data: `asset|EURUSD|${model}` }]
   ]};
 }
