@@ -36,23 +36,27 @@ def update_statuses(symbol):
     updated = False
     now = datetime.utcnow()
     
-    # Tarik data M5 terbaru buat ngecek harga (timeout 15 detik biar nggak hang)
     try:
         ticker = {"XAUUSD": "GC=F", "BTCUSD": "BTC-USD", "NASDAQ": "NQ=F", "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X"}.get(symbol.upper(), symbol)
         df = yf.download(ticker, period="5d", interval="5m", progress=False, timeout=15)
         if df.empty: return
         
         if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
-        df = df.reset_index().rename(columns={"Datetime": "time"})
+        
+        # FIX: Ubah semua nama kolom jadi huruf kecil (High -> high)
+        df.columns = [col.lower() if isinstance(col, str) else col for col in df.columns]
+        
+        df = df.reset_index().rename(columns={"datetime": "time"})
         df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
-    except:
-        return # Kalau gagal narik data, skip update dulu
+        
+    except Exception as e:
+        print(f"Gagal update memori: {e}")
+        return
 
     for entry in data:
         if entry['symbol'] == symbol and entry['status'] == 'PENDING':
             entry_time = pd.to_datetime(entry['timestamp'])
             
-            # Cek Expired (Kalau lebih dari 24 jam belum kena TP/SL/Entry, anggap hangus)
             if (now - entry_time).total_seconds() > 86400:
                 entry['status'] = 'EXPIRED'
                 updated = True
@@ -69,16 +73,13 @@ def update_statuses(symbol):
             hit_status = None
 
             for _, row in df_after.iterrows():
-                high, low = float(row['high']), float(row['low'])
+                high, low = float(row['high']), float(row['low']) # Sekarang ini aman
                 
-                # 1. Cek Apakah Harga Masuk Zona Entry?
                 if not is_triggered:
                     if action == "BUY_LIMIT" and low <= e_min:
                         is_triggered = True
                     elif action == "SELL_LIMIT" and high >= e_max:
                         is_triggered = True
-                    
-                    # Cek Missed: Harga kena TP duluan sebelum nyentuh Entry
                     elif action == "BUY_LIMIT" and high >= tp1:
                         hit_status = "MISSED (TP Before Entry)"
                         break
@@ -86,7 +87,6 @@ def update_statuses(symbol):
                         hit_status = "MISSED (TP Before Entry)"
                         break
 
-                # 2. Cek TP / SL (Hanya berjalan kalau Entry sudah tersentuh)
                 if is_triggered:
                     if action == "BUY_LIMIT":
                         if high >= tp1: hit_status = "WIN (TP HIT)"; break
@@ -102,13 +102,9 @@ def update_statuses(symbol):
     if updated:
         save_history(data)
 
-
 def get_memory_summary(symbol):
-    # Panggil update status dulu sebelum nampilin data
     update_statuses(symbol)
     data = load_history()
-    
-    # Filter khusus pair ini yang statusnya udah selesai (bukan PENDING)
     pair_data = [x for x in data if x['symbol'] == symbol and x['status'] not in ['PENDING', 'EXPIRED']]
     
     if not pair_data:
@@ -121,20 +117,17 @@ def get_memory_summary(symbol):
     
     winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
 
-    # Breakdown performa per jenis Plan (Daily vs Session)
     daily_data = [x for x in pair_data if x['plan_type'] == 'Daily' and x['status'] in ['WIN (TP HIT)', 'LOSS (SL HIT)']]
     session_data = [x for x in pair_data if x['plan_type'] == 'Session' and x['status'] in ['WIN (TP HIT)', 'LOSS (SL HIT)']]
     
     daily_wr = (sum(1 for x in daily_data if "WIN" in x['status']) / len(daily_data) * 100) if daily_data else 0
     session_wr = (sum(1 for x in session_data if "WIN" in x['status']) / len(session_data) * 100) if session_data else 0
 
-    # --- ATURAN EMAS: MINIMAL 50 TRADE BARU BOLEH ADAPTASI ---
     if total < 50:
         summary = f"""
 [MEMORI PERFORMA {symbol} - FASE PENGUMPULAN DATA]
 - Total Trade Selesai: {total} / 50 (Sampel belum cukup untuk evaluasi).
 - Winrate Sementara: {winrate:.1f}%
-- Catatan: Jangan terlalu berpatokan pada statistik ini karena sampel masih kecil.
 
 [INSTRUKSI UNTUK AI]
 Tetap berikan setup objektif murni berdasarkan analisa Fundamental dan Price Action hari ini. Jangan mengubah aturan strategi hanya karena winrate di atas. Fokus pada kualitas setup!
@@ -150,8 +143,6 @@ Tetap berikan setup objektif murni berdasarkan analisa Fundamental dan Price Act
 [INSTRUKSI UNTUK AI - GUNAKAN DATA INI]
 Data sampel sudah sangat cukup. Gunakan winrate di atas untuk menyesuaikan output:
 - Jika winrate Daily jauh lebih tinggi dari Session, prioritaskan Setup Daily.
-- Jika winrate Session rendah (<50%), berikan syarat Trigger yang lebih ketat untuk Setup Session, atau abaikan jika momentum tidak jelas.
-- Pelajari status 'MISSED' (harga kena TP tapi nggak nyentuh Entry), jangan taruh Zona Entry terlalu jauh dari harga saat ini.
+- Jika winrate Session rendah (<50%), berikan syarat Trigger yang lebih ketat untuk Setup Session.
 """
-    
     return summary
