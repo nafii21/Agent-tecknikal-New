@@ -14,12 +14,13 @@ def load_history():
 def save_history(data):
     with open(HISTORY_FILE, "w") as f: json.dump(data, f, indent=2)
 
-def add_setup(symbol, plan_type, action, entry_min, entry_max, sl, tp1, tp2):
+def add_setup(symbol, plan_type, action, entry_min, entry_max, sl, tp1, tp2, model="unknown"):
     data = load_history()
     setup = {
         "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol": symbol,
-        "plan_type": plan_type, # "Daily" atau "Session"
+        "model": model, # <-- Tambahan: Nyimpen nama model
+        "plan_type": plan_type,
         "action": action,
         "entry_min": float(entry_min),
         "entry_max": float(entry_max),
@@ -42,8 +43,6 @@ def update_statuses(symbol):
         if df.empty: return
         
         if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
-        
-        # FIX: Ubah semua nama kolom jadi huruf kecil (High -> high)
         df.columns = [col.lower() if isinstance(col, str) else col for col in df.columns]
         
         df = df.reset_index().rename(columns={"datetime": "time"})
@@ -73,7 +72,7 @@ def update_statuses(symbol):
             hit_status = None
 
             for _, row in df_after.iterrows():
-                high, low = float(row['high']), float(row['low']) # Sekarang ini aman
+                high, low = float(row['high']), float(row['low'])
                 
                 if not is_triggered:
                     if action == "BUY_LIMIT" and low <= e_min:
@@ -102,13 +101,15 @@ def update_statuses(symbol):
     if updated:
         save_history(data)
 
-def get_memory_summary(symbol):
+def get_memory_summary(symbol, model="unknown"):
     update_statuses(symbol)
     data = load_history()
-    pair_data = [x for x in data if x['symbol'] == symbol and x['status'] not in ['PENDING', 'EXPIRED']]
+    
+    # FILTER: Hanya ngambil history dari symbol DAN model yang sama
+    pair_data = [x for x in data if x['symbol'] == symbol and x.get('model') == model and x['status'] not in ['PENDING', 'EXPIRED']]
     
     if not pair_data:
-        return "[MEMORI PERFORMA]: Belum ada histori trade yang selesai. Fokus eksekusi murni berdasarkan analisa market hari ini."
+        return f"[MEMORI PERFORMA {model.upper()}]: Belum ada histori trade selesai untuk pair ini. Fokus eksekusi murni berdasarkan analisa market hari ini."
 
     total = len(pair_data)
     wins = sum(1 for x in pair_data if "WIN" in x['status'])
@@ -125,7 +126,7 @@ def get_memory_summary(symbol):
 
     if total < 50:
         summary = f"""
-[MEMORI PERFORMA {symbol} - FASE PENGUMPULAN DATA]
+[MEMORI PERFORMA {model.upper()} - {symbol}]
 - Total Trade Selesai: {total} / 50 (Sampel belum cukup untuk evaluasi).
 - Winrate Sementara: {winrate:.1f}%
 
@@ -134,7 +135,7 @@ Tetap berikan setup objektif murni berdasarkan analisa Fundamental dan Price Act
 """
     else:
         summary = f"""
-[MEMORI PERFORMA {symbol} - FASE EVALUASI (SIAP BERADAPTASI)]
+[MEMORI PERFORMA {model.upper()} - {symbol}]
 - Total Trade Selesai: {total}
 - Winrate Keseluruhan: {winrate:.1f}% (Win: {wins}, Loss: {losses}, Missed: {missed})
 - Winrate Setup Daily: {daily_wr:.1f}%
