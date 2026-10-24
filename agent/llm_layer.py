@@ -48,7 +48,45 @@ OUTPUT HARUS JSON VALID:
 """
 
 # ==========================================
-# 1. FUNGSI ANALISA UNTUK NEMOTRON (TANPA SATPAM)
+# SATPAM MATEMATIKA (Berlaku untuk semua model)
+# ==========================================
+def validate_setup(plan, plan_name):
+    if plan.get("action") not in ["BUY_LIMIT", "SELL_LIMIT"]: return plan
+    try:
+        e_min, e_max = float(plan.get("entry_zone_min", 0)), float(plan.get("entry_zone_max", 0))
+        sl, tp1 = float(plan.get("sl", 0)), float(plan.get("tp1", 0))
+        entry_avg = (e_min + e_max) / 2
+        
+        # 1. Cek Arah SL
+        if plan["action"] == "BUY_LIMIT" and sl >= e_min:
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: SL tidak valid untuk BUY (harus di bawah entry)."; return plan
+        if plan["action"] == "SELL_LIMIT" and sl <= e_max:
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: SL tidak valid untuk SELL (harus di atas entry)."; return plan
+            
+        # 2. Cek RR Minimal 1:2
+        risk = abs(entry_avg - sl)
+        reward1 = abs(tp1 - entry_avg)
+        
+        if risk == 0:
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Jarak SL dan Entry 0."; return plan
+            
+        rr = reward1 / risk
+        if rr < 1.9: # Kasih toleransi tipis 1.9
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = f"SISTEM BATAL: RR terlalu kecil (1:{rr:.2f}). AI melanggar aturan minimal 1:2."; return plan
+            
+        # 3. Cek SL Kegedean (Maksimal 5% dari harga entry)
+        if risk > (entry_avg * 0.05):
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Jarak SL terlalu lebar (Risk > 5% harga)."; return plan
+
+        # Rapihin format angka
+        plan["entry_zone_min"], plan["entry_zone_max"], plan["sl"], plan["tp1"] = e_min, e_max, sl, tp1
+        plan["tp2"] = float(plan.get("tp2", 0))
+    except Exception as e:
+        plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Gagal validasi matematika."
+    return plan
+
+# ==========================================
+# 1. FUNGSI ANALISA UNTUK NEMOTRON (PAKAI SATPAM)
 # ==========================================
 def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
     client = OpenAI(
@@ -69,46 +107,19 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
             temperature=0.2,
             response_format={"type": "json_object"},
         )
-        return json.loads(resp.choices[0].message.content)
+        result = json.loads(resp.choices[0].message.content)
+        
+        # Panggil Satpam Matematika
+        if "setup_daily" in result: result["setup_daily"] = validate_setup(result["setup_daily"], "Daily")
+        if "setup_session" in result: result["setup_session"] = validate_setup(result["setup_session"], "Session")
+            
+        return result
     except Exception as e:
-        return {"error": f"LLM Error: {str(e)}"}
-
+        return {"error": f"Nemotron Error: {str(e)}"}
 
 # ==========================================
 # 2. FUNGSI ANALISA UNTUK DEEPSEEK (PAKAI SATPAM)
 # ==========================================
-def validate_setup(plan, plan_name):
-    """Satpam Matematika khusus DeepSeek"""
-    if plan.get("action") not in ["BUY_LIMIT", "SELL_LIMIT"]: return plan
-    try:
-        e_min, e_max = float(plan.get("entry_zone_min", 0)), float(plan.get("entry_zone_max", 0))
-        sl, tp1 = float(plan.get("sl", 0)), float(plan.get("tp1", 0))
-        entry_avg = (e_min + e_max) / 2
-        
-        if plan["action"] == "BUY_LIMIT" and sl >= e_min:
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: SL tidak valid untuk BUY."; return plan
-        if plan["action"] == "SELL_LIMIT" and sl <= e_max:
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: SL tidak valid untuk SELL."; return plan
-            
-        risk = abs(entry_avg - sl)
-        reward1 = abs(tp1 - entry_avg)
-        
-        if risk == 0:
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Jarak SL dan Entry 0."; return plan
-            
-        rr = reward1 / risk
-        if rr < 1.9:
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = f"SISTEM BATAL: RR terlalu kecil (1:{rr:.2f})."; return plan
-            
-        if risk > (entry_avg * 0.05):
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Jarak SL terlalu lebar (Risk > 5%)."; return plan
-
-        plan["entry_zone_min"], plan["entry_zone_max"], plan["sl"], plan["tp1"] = e_min, e_max, sl, tp1
-        plan["tp2"] = float(plan.get("tp2", 0))
-    except:
-        plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Gagal validasi matematika."
-    return plan
-
 def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
     client = OpenAI(
         base_url="https://api.sakelar.web.id/v1", 
@@ -136,4 +147,4 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
             
         return result
     except Exception as e:
-        return {"error": f"LLM Error: {str(e)}"}
+        return {"error": f"DeepSeek Error: {str(e)}"}
