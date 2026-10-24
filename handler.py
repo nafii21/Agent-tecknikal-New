@@ -15,20 +15,25 @@ def clean_html(text):
 
 def send_tg(text):
     if TOKEN and CHAT_ID:
-        if len(text) > 4000:
-            text = text[:4000] + "\n\n<i>... (Pesan dipotong)</i>"
-            
+        if len(text) > 4000: text = text[:4000] + "\n\n<i>... (dipotong)</i>"
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
-        
         try:
             resp = httpx.post(url, json=payload, timeout=30)
             if not resp.is_success:
-                print(f"❌ Telegram Nolak Pesan: {resp.text}")
                 payload.pop("parse_mode") 
                 httpx.post(url, json=payload, timeout=30)
-        except Exception as e:
-            print(f"❌ Gagal kirim ke Telegram: {e}")
+        except Exception as e: print(f"❌ Gagal kirim: {e}")
+
+def send_photo(path, caption):
+    if TOKEN and CHAT_ID:
+        with open(path, "rb") as f:
+            httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"photo": f}, timeout=30)
+
+def send_document(path, caption):
+    if TOKEN and CHAT_ID:
+        with open(path, "rb") as f:
+            httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendDocument", data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"document": f}, timeout=30)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,50 +42,43 @@ def main():
     parser.add_argument("--cmd")
     args = parser.parse_args()
 
-    # --- FITUR JOURNAL ---
+    # --- FITUR JOURNAL (Teks) ---
     if args.cmd == "journal":
         history = load_history()
         if not history:
-            send_tg("📖 Belum ada catatan journal (trades_history.json kosong).")
+            send_tg("📖 Belum ada catatan journal.")
             return
-        
-        # Statistik Keseluruhan (DeepSeek & Nemotron digabung)
         total = len(history)
         wins = sum(1 for x in history if "WIN" in x.get('status', ''))
         losses = sum(1 for x in history if "LOSS" in x.get('status', ''))
-        missed = sum(1 for x in history if "MISSED" in x.get('status', ''))
-        pending = sum(1 for x in history if x.get('status') == 'PENDING')
+        winrate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
         
-        closed = wins + losses
-        winrate = (wins / closed * 100) if closed > 0 else 0
-        
-        txt = (
-            f"📊 <b>PERFORMA KESELURUHAN (Total: {total})</b>\n"
-            f"✅ Win: <b>{wins}</b> | ❌ Loss: <b>{losses}</b> | ⏳ Pending: <b>{pending}</b>\n"
-            f"⚠️ Missed: {missed} | 🎯 Winrate: <b>{winrate:.1f}%</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📖 <b>5 Catatan Journal Terakhir:</b>\n"
-        )
-        
+        txt = f"📊 <b>PERFORMA (Total: {total})</b>\n✅ Win: <b>{wins}</b> | ❌ Loss: <b>{losses}</b> | 🎯 WR: <b>{winrate:.1f}%</b>\n━━━━━━━━━━━━━━━━━━\n📖 <b>5 Terakhir:</b>\n"
         for r in history[:5]:
-            model_name = r.get('model', 'Unknown').upper()
-            txt += (
-                f"\n📅 {r.get('timestamp', '-')[:16]} WIB\n"
-                f"🧠 Model: {model_name}\n"
-                f"💱 {r.get('symbol', '-')} | {r.get('plan_type', '-')} | {r.get('action', '-')}\n"
-                f"📍 Entry: {r.get('entry_min', '-')} - {r.get('entry_max', '-')}\n"
-                f"🛑 SL: {r.get('sl', '-')} | 💎 TP: {r.get('tp1', '-')}\n"
-                f"🏆 Status: <b>{r.get('status', '-')}</b>\n"
-                f"━━━━━━━━━━━━━━━━━━"
-            )
+            txt += f"\n📅 {r.get('timestamp', '-')[:16]} WIB | 🧠 {r.get('model', 'Unknown').upper()}\n💱 {r.get('symbol')} | {r.get('plan_type')} | {r.get('action')}\n🏆 Status: <b>{r.get('status')}</b>\n"
         send_tg(txt)
+        return
+
+    # --- FITUR STATISTIK & CSV (Baru) ---
+    if args.cmd == "stats":
+        from agent.report import export_csv, generate_wr_chart
+        send_tg("⏳ Membuat Grafik & File CSV...")
+        
+        csv_file = export_csv()
+        chart_file = generate_wr_chart()
+        
+        if not csv_file and not chart_file:
+            send_tg("📊 Belum ada data untuk diekspor.")
+            return
+            
+        if chart_file: send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
+        if csv_file: send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>\nBisa dibuka di Excel/Google Sheets.")
         return
 
     # --- FITUR ANALISA MARKET ---
     if not args.symbol: return
 
     try:
-        # 1. Ambil Memory (Sesuai Model yang dipilih)
         memory_summary = get_memory_summary(args.symbol, args.model)
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
@@ -109,7 +107,6 @@ def main():
         daily = decision.get("setup_daily", {})
         session = decision.get("setup_session", {})
         
-        # --- SIMPAN KE MEMORY (Bawa nama modelnya) ---
         if daily.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             add_setup(args.symbol, "Daily", daily.get("action"), daily.get("entry_zone_min"), daily.get("entry_zone_max"), daily.get("sl"), daily.get("tp1"), daily.get("tp2"), model=args.model)
             
@@ -117,21 +114,14 @@ def main():
             add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"), model=args.model)
 
         if args.cmd == "cron" and daily.get("action") == "WAIT" and session.get("action") == "WAIT":
-            print("Cron: Tidak ada setup valid.")
             return
 
-        # --- FORMATTING TELEGRAM ---
         def format_plan(plan, title):
-            if plan.get("action") == "WAIT": 
-                return f"⏳ <b>{title}</b>\n└ Status: WAIT\n"
-                
+            if plan.get("action") == "WAIT": return f"⏳ <b>{title}</b>\n└ Status: WAIT\n"
             return (
-                f"🎯 <b>{title}</b>\n"
-                f"├ Action: <b>{plan.get('action')}</b>\n"
+                f"🎯 <b>{title}</b>\n├ Action: <b>{plan.get('action')}</b>\n"
                 f"├ Zona Entry: <code>{plan.get('entry_zone_min')} - {plan.get('entry_zone_max')}</code>\n"
-                f"├ SL: <code>{plan.get('sl')}</code>\n"
-                f"├ TP1: <code>{plan.get('tp1')}</code>\n"
-                f"├ TP2: <code>{plan.get('tp2')}</code>\n"
+                f"├ SL: <code>{plan.get('sl')}</code>\n├ TP1: <code>{plan.get('tp1')}</code>\n├ TP2: <code>{plan.get('tp2')}</code>\n"
                 f"├ ⚡ <b>Trigger:</b> <i>{clean_html(plan.get('trigger_entry'))}</i>\n"
                 f"└ ⚠️ <b>Batal:</b> <i>{clean_html(plan.get('dynamic_invalidation'))}</i>\n"
             )
@@ -139,14 +129,11 @@ def main():
         text = (
             f"🏛️ <b>[HERMES INSTITUTIONAL AI - {args.model.upper()}]</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 <b>Pair:</b> {args.symbol}\n"
-            f"📉 <b>Bias:</b> {decision.get('bias', '-')}\n"
+            f"📊 <b>Pair:</b> {args.symbol}\n📉 <b>Bias:</b> {decision.get('bias', '-')}\n"
             f"🕒 <b>Sesi:</b> {clean_html(decision.get('session_analysis', '-'))}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🧠 <b>NARRATIVE (Analisa):</b>\n"
-            f"<blockquote>{clean_html(decision.get('narrative', '-'))}</blockquote>\n"
-            f"📌 <b>KEY LEVELS:</b>\n"
-            f"<blockquote>{clean_html(decision.get('key_levels', '-'))}</blockquote>\n"
+            f"🧠 <b>NARRATIVE:</b>\n<blockquote>{clean_html(decision.get('narrative', '-'))}</blockquote>\n"
+            f"📌 <b>KEY LEVELS:</b>\n<blockquote>{clean_html(decision.get('key_levels', '-'))}</blockquote>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"{format_plan(daily, 'SETUP 1: DAILY INTRADAY')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -154,7 +141,6 @@ def main():
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📝 <i>Log: {filename}</i>"
         )
-        
         send_tg(text)
 
     except Exception as e:
