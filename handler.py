@@ -2,7 +2,7 @@ import os, argparse, httpx, json, pandas as pd
 from datetime import datetime
 from agent.data import fetch_all_data
 from agent.snapshot import generate_snapshot
-from agent.llm_layer import analyze
+from agent.llm_layer import analyze_deepseek, analyze_nemotron
 from agent.memory import get_memory_summary, add_setup
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -29,8 +29,11 @@ def main():
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
         
-        # 3. Analisa AI (Kirim tipe model-nya)
-        decision = analyze(snapshot_text, memory_summary, model_type=args.model)
+        # 3. Routing Model AI
+        if args.model.lower() == "nemotron":
+            decision = analyze_nemotron(snapshot_text, memory_summary)
+        else:
+            decision = analyze_deepseek(snapshot_text, memory_summary)
         
         if "error" in decision:
             if args.cmd != "cron": send_tg(f"❌ {decision['error']}")
@@ -42,7 +45,7 @@ def main():
         filename = f"log_analisa/{time_str}.md"
         
         with open(filename, "w") as f:
-            f.write(f"# Analisa {args.symbol} (Model: {args.model}) - {time_str}\n\n")
+            f.write(f"# Analisa {args.symbol} (Model: {args.model.upper()}) - {time_str}\n\n")
             f.write(f"## Memory Feedback\n{memory_summary}\n\n")
             f.write(f"## Narrative\n{decision.get('narrative')}\n\n")
             f.write(f"## Key Levels\n{decision.get('key_levels')}\n\n")
@@ -59,7 +62,7 @@ def main():
         if session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"))
 
-        # 6. Cek WAIT
+        # 6. Cek WAIT (Kalau cron dan dua-duanya wait, jangan kirim)
         if args.cmd == "cron" and daily.get("action") == "WAIT" and session.get("action") == "WAIT":
             print("Cron: Tidak ada setup valid.")
             return
