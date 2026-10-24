@@ -1,5 +1,18 @@
 [
   {
+    "timestamp": "2026-10-24 19:59:14",
+    "symbol": "BTCUSD",
+    "model": "deepseek",
+    "plan_type": "Daily",
+    "action": "SELL_LIMIT",
+    "entry_min": 80750.15,
+    "entry_max": 81007.96,
+    "sl": 81570.0,
+    "tp1": 79165.07,
+    "tp2": 78000.0,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-10-24 19:51:59",
     "symbol": "BTCUSD",
     "model": "nemotron",
