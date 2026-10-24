@@ -1,5 +1,29 @@
 [
   {
+    "timestamp": "2026-10-24 10:24:03",
+    "symbol": "BTCUSD",
+    "plan_type": "Session",
+    "action": "SELL_LIMIT",
+    "entry_min": 80580.0,
+    "entry_max": 80630.0,
+    "sl": 80820.0,
+    "tp1": 80100.0,
+    "tp2": 79600.0,
+    "status": "PENDING"
+  },
+  {
+    "timestamp": "2026-10-24 10:24:03",
+    "symbol": "BTCUSD",
+    "plan_type": "Daily",
+    "action": "SELL_LIMIT",
+    "entry_min": 80750.0,
+    "entry_max": 80950.0,
+    "sl": 81440.0,
+    "tp1": 79370.0,
+    "tp2": 78600.0,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-10-24 10:19:59",
     "symbol": "BTCUSD",
     "plan_type": "Session",
