@@ -3,8 +3,9 @@ export default {
     if (request.method !== "POST") return new Response("OK");
     const body = await request.json();
 
-    // 1. Handle command /start
-    if (body.message && body.message.text === "/start") {
+    // 1. Handle command /start (FIX BUAT GRUP)
+    // Pakai startsWith biar kebaca walaupun formatnya /start@NamaBot
+    if (body.message && body.message.text && body.message.text.startsWith("/start")) {
       await sendTelegram(env.TELEGRAM_BOT_TOKEN, body.message.chat.id, 
         "🏛️ <b>HERMES Institutional Bot</b>\n\nSilakan pilih menu:", getMainMenu());
       return new Response("OK");
@@ -57,20 +58,15 @@ export default {
   async scheduled(event, env, ctx) {
     const today = new Date().getUTCDay();
     
-    // Libur di hari Sabtu (6) dan Minggu (0)
     if (today === 0 || today === 6) {
       console.log("Akhir pekan: Market tutup. Bot libur.");
       return; 
     }
 
     console.log("Hari kerja: Memicu Auto-Scan...");
-    
-    // --- SETINGAN CRON ---
-    // Pilih model: "deepseek" atau "nemotron"
     const cronModel = "deepseek"; 
     
-    // Lo bisa tambahin pair lain di sini kalau mau (misal: ["XAUUSD", "BTCUSD"])
-    // Tapi karena sekarang fokus XAUUSD, kita biarin satu aja.
+    // --- PENTING: GANTI CHAT ID DI GITHUB KE ID GRUP ---
     await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", cronModel, "cron");
   }
 };
