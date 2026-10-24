@@ -8,7 +8,7 @@ client = OpenAI(
 )
 
 # GANTI DENGAN NAMA MODEL YANG LO PILIH DI SAKELAR
-MODEL = "gpt-4o" 
+MODEL = "deepseek-v4.1-flash" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Fund Manager" dengan gaya Dynamic Entry.
