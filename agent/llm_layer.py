@@ -15,7 +15,7 @@ Tugasmu menganalisa data Snapshot Market dan MEMBACA MEMORI PERFORMA MASA LALU.
 ATURAN ANALISIS:
 1. BACA BAGIAN "MEMORI PERFORMA".
 2. BACA BERITA & FUNDAMENTAL.
-3. CEK TREN D1/H4/H1. 
+3. CEK TREN D1/H4/H1. Gunakan Swing High/Low untuk konfirmasi struktur (BOS/CHoCH).
 4. CARI SWEET SPOT: Gunakan Fibo 61.8%, 78.6%, atau Pivot.
 5. GUNAKAN ATR: Jarak SL harus logis (minimal 1.5x ATR, maksimal 4x ATR).
 6. CEK M15: Cari momentum.
