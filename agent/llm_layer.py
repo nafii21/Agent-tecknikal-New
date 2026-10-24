@@ -21,9 +21,9 @@ ATURAN ENTRY (DYNAMIC ENTRY):
 OUTPUT HARUS JSON VALID:
 {
   "bias": "BULLISH|BEARISH",
-  "session_analysis": "Penjelasan kondisi sesi...",
-  "narrative": "Penjelasan detail (Fundamental + Teknikal + Swing/ATR)...",
-  "key_levels": "Level kunci (Pivot, Fibo 61.8%, Swing High/Low) dalam teks.",
+  "session_analysis": "Penjelasan sesi...",
+  "narrative": "Penjelasan teknikal & fundamental...",
+  "key_levels": "Level kunci...",
   "setup_daily": {
     "action": "BUY_LIMIT|SELL_LIMIT|WAIT",
     "entry_zone_min": float,
@@ -41,26 +41,27 @@ OUTPUT HARUS JSON VALID:
     "sl": float,
     "tp1": float,
     "tp2": float,
-    "trigger_entry": "Syarat momentum M15...",
+    "trigger_entry": "Syarat momentum...",
     "dynamic_invalidation": "Syarat batal..."
   }
 }
 """
 
 # ==========================================
-# 1. FUNGSI ANALISA UNTUK NEMOTRON (LOGIKA LAMA)
+# 1. FUNGSI ANALISA UNTUK NEMOTRON (TANPA SATPAM)
 # ==========================================
 def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
     client = OpenAI(
-        base_url="https://openrouter.ai/api/v1", 
+        base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY", "")
     )
-    model_name = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    
     user_payload = f"{memory_summary}\n\n=== DATA MARKET SAAT INI ===\n{snapshot_text}"
     
     try:
         resp = client.chat.completions.create(
-            model=model_name,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_payload},
@@ -68,13 +69,13 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
             temperature=0.2,
             response_format={"type": "json_object"},
         )
-        # LANGSUNG RETURN TANPA SATPAM MATEMATIKA (Sesuai request lo)
         return json.loads(resp.choices[0].message.content)
     except Exception as e:
-        return {"error": f"Nemotron Error: {str(e)}"}
+        return {"error": f"LLM Error: {str(e)}"}
+
 
 # ==========================================
-# 2. FUNGSI ANALISA UNTUK DEEPSEEK (ADA SATPAM)
+# 2. FUNGSI ANALISA UNTUK DEEPSEEK (PAKAI SATPAM)
 # ==========================================
 def validate_setup(plan, plan_name):
     """Satpam Matematika khusus DeepSeek"""
@@ -113,12 +114,13 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
         base_url="https://api.sakelar.web.id/v1", 
         api_key=os.environ.get("SAKELAR_API_KEY", "")
     )
-    model_name = "deepseek-v4.1-flash"
+    MODEL = "deepseek-v4.1-flash"
+    
     user_payload = f"{memory_summary}\n\n=== DATA MARKET SAAT INI ===\n{snapshot_text}"
     
     try:
         resp = client.chat.completions.create(
-            model=model_name,
+            model=MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_payload},
@@ -134,4 +136,4 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
             
         return result
     except Exception as e:
-        return {"error": f"DeepSeek Error: {str(e)}"}
+        return {"error": f"LLM Error: {str(e)}"}
