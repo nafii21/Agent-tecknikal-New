@@ -1,4 +1,3 @@
-```python
 import json, os
 from openai import OpenAI
 
