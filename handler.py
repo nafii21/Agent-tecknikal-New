@@ -44,29 +44,29 @@ def main():
             send_tg("📖 Belum ada catatan journal (trades_history.json kosong).")
             return
         
-        # Itung Statistik
+        # Statistik Keseluruhan (DeepSeek & Nemotron digabung)
         total = len(history)
         wins = sum(1 for x in history if "WIN" in x.get('status', ''))
         losses = sum(1 for x in history if "LOSS" in x.get('status', ''))
         missed = sum(1 for x in history if "MISSED" in x.get('status', ''))
         pending = sum(1 for x in history if x.get('status') == 'PENDING')
-        expired = sum(1 for x in history if x.get('status') == 'EXPIRED')
         
         closed = wins + losses
         winrate = (wins / closed * 100) if closed > 0 else 0
         
         txt = (
-            f"📊 <b>PERFORMA TRADING (Total: {total})</b>\n"
+            f"📊 <b>PERFORMA KESELURUHAN (Total: {total})</b>\n"
             f"✅ Win: <b>{wins}</b> | ❌ Loss: <b>{losses}</b> | ⏳ Pending: <b>{pending}</b>\n"
-            f"⚠️ Missed: {missed} | ⏰ Expired: {expired}\n"
-            f"🎯 Winrate: <b>{winrate:.1f}%</b>\n"
+            f"⚠️ Missed: {missed} | 🎯 Winrate: <b>{winrate:.1f}%</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"📖 <b>5 Catatan Journal Terakhir:</b>\n"
         )
         
-        for r in history[:5]: # Ambil 5 teratas
+        for r in history[:5]:
+            model_name = r.get('model', 'Unknown').upper()
             txt += (
                 f"\n📅 {r.get('timestamp', '-')[:16]} WIB\n"
+                f"🧠 Model: {model_name}\n"
                 f"💱 {r.get('symbol', '-')} | {r.get('plan_type', '-')} | {r.get('action', '-')}\n"
                 f"📍 Entry: {r.get('entry_min', '-')} - {r.get('entry_max', '-')}\n"
                 f"🛑 SL: {r.get('sl', '-')} | 💎 TP: {r.get('tp1', '-')}\n"
@@ -80,7 +80,8 @@ def main():
     if not args.symbol: return
 
     try:
-        memory_summary = get_memory_summary(args.symbol)
+        # 1. Ambil Memory (Sesuai Model yang dipilih)
+        memory_summary = get_memory_summary(args.symbol, args.model)
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
         
@@ -108,11 +109,12 @@ def main():
         daily = decision.get("setup_daily", {})
         session = decision.get("setup_session", {})
         
+        # --- SIMPAN KE MEMORY (Bawa nama modelnya) ---
         if daily.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
-            add_setup(args.symbol, "Daily", daily.get("action"), daily.get("entry_zone_min"), daily.get("entry_zone_max"), daily.get("sl"), daily.get("tp1"), daily.get("tp2"))
+            add_setup(args.symbol, "Daily", daily.get("action"), daily.get("entry_zone_min"), daily.get("entry_zone_max"), daily.get("sl"), daily.get("tp1"), daily.get("tp2"), model=args.model)
             
         if session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
-            add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"))
+            add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"), model=args.model)
 
         if args.cmd == "cron" and daily.get("action") == "WAIT" and session.get("action") == "WAIT":
             print("Cron: Tidak ada setup valid.")
