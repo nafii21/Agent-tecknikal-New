@@ -2,7 +2,7 @@ import pandas as pd
 import pandas_ta_classic as ta
 from datetime import datetime
 import pytz
-from agent.news import get_market_news # <--- IMPORT FUNGSI BERITA
+from agent.news import get_market_news
 
 def get_market_session():
     now_utc = datetime.now(pytz.utc)
@@ -31,6 +31,7 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
         if tf not in main_data: continue
         df = main_data[tf].copy()
         
+        # Hitung Indikator
         df['ema20'] = ta.ema(df['close'], length=20)
         df['ema50'] = ta.ema(df['close'], length=50)
         df['rsi'] = ta.rsi(df['close'], length=14)
@@ -43,14 +44,30 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
         report += f"Close: {last['close']:.2f} | EMA20: {last['ema20']:.2f} | EMA50: {last['ema50']:.2f}\n"
         report += f"RSI: {last['rsi']:.1f} | ATR: {last['atr']:.2f} | Trend: {trend}\n"
         
-        if tf == "D1":
+        # Hitung Pivot & Fibo Lengkap (D1, H4, H1)
+        if tf in ["D1", "H4", "H1"]:
             prev = df.iloc[-2]
-            p = (prev['high'] + prev['low'] + prev['close']) / 3
-            r1, s1 = (2*p) - prev['low'], (2*p) - prev['high']
-            fibo_50 = (prev['high'] + prev['low']) / 2
+            high, low, close = prev['high'], prev['low'], prev['close']
+            p = (high + low + close) / 3
+            r1, s1 = (2*p) - low, (2*p) - high
             
-            report += f"\n[ LEVEL KUNCI D1 ]\nPivot: {p:.2f} | R1: {r1:.2f} | S1: {s1:.2f}\n"
-            report += f"Fibo 50% (Sweet Spot): {fibo_50:.2f}\n\n"
+            # Fibonacci
+            diff = high - low
+            fibo_0 = high
+            fibo_236 = high - (diff * 0.236)
+            fibo_382 = high - (diff * 0.382)
+            fibo_50 = high - (diff * 0.5)
+            fibo_618 = high - (diff * 0.618)
+            fibo_786 = high - (diff * 0.786)
+            fibo_100 = low
+            
+            report += f"\n[ LEVEL FIBO & PIVOT {tf} ]\n"
+            report += f"Pivot: {p:.2f} | R1: {r1:.2f} | S1: {s1:.2f}\n"
+            report += f"Fibo 23.6%: {fibo_236:.2f} | Fibo 38.2%: {fibo_382:.2f} | Fibo 50%: {fibo_50:.2f}\n"
+            report += f"Fibo 61.8% (Golden): {fibo_618:.2f} | Fibo 78.6%: {fibo_786:.2f}\n\n"
+            
+        recent = df.tail(5)[['open', 'high', 'low', 'close']].round(2).to_dict('records')
+        report += f"Last 5 Candles: {recent}\n\n"
 
     # 2. Konteks Makro
     report += "===== KONTEKS MAKRO (FUNDAMENTAL) =====\n"
@@ -58,7 +75,7 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
     if "US10Y" in macro: report += f"US10Y (Bond Yield): {macro['US10Y']['price']}% ({macro['US10Y']['change_pct']:+.2f}%)\n"
     if "OIL" in macro: report += f"Oil (Brent): {macro['OIL']['price']} ({macro['OIL']['change_pct']:+.2f}%)\n\n"
     
-    # 3. Tambahin Berita Web Search
+    # 3. Berita
     news_text = get_market_news(symbol)
     report += news_text
     
