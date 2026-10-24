@@ -10,25 +10,22 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def clean_html(text):
-    """Ngubah < jadi &lt; dan > jadi &gt; biar nggak dianggap tag HTML sama Telegram"""
     if not text: return "-"
     return str(text).replace("<", "&lt;").replace(">", "&gt;")
 
 def send_tg(text):
     if TOKEN and CHAT_ID:
-        # 1. Batasi panjang pesan (Telegram max 4096 char)
+        # Batasi panjang teks
         if len(text) > 4000:
-            text = text[:4000] + "\n\n<i>... (Pesan dipotong karena terlalu panjang)</i>"
+            text = text[:4000] + "\n\n<i>... (Pesan dipotong)</i>"
             
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
         
         try:
-            # 2. Kirim pesan & cek respon
             resp = httpx.post(url, json=payload, timeout=30)
             if not resp.is_success:
                 print(f"❌ Telegram Nolak Pesan: {resp.text}")
-                # 3. Kalau ditolak gara-gara HTML, kirim ulang tanpa HTML
                 payload.pop("parse_mode") 
                 httpx.post(url, json=payload, timeout=30)
         except Exception as e:
@@ -44,14 +41,10 @@ def main():
     if not args.symbol: return
 
     try:
-        # 1. Ambil Memory
         memory_summary = get_memory_summary(args.symbol)
-        
-        # 2. Ambil Data & Snapshot
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
         
-        # 3. Routing Model AI
         if args.model.lower() == "nemotron":
             decision = analyze_nemotron(snapshot_text, memory_summary)
         else:
@@ -61,7 +54,6 @@ def main():
             if args.cmd != "cron": send_tg(f"❌ {decision['error']}")
             return
 
-        # 4. Simpan Log Markdown
         os.makedirs("log_analisa", exist_ok=True)
         time_str = datetime.now().strftime("%Y-%m-%d_%H%M")
         filename = f"log_analisa/{time_str}.md"
@@ -77,38 +69,43 @@ def main():
         daily = decision.get("setup_daily", {})
         session = decision.get("setup_session", {})
         
-        # 5. Simpan Setup ke Memory
         if daily.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             add_setup(args.symbol, "Daily", daily.get("action"), daily.get("entry_zone_min"), daily.get("entry_zone_max"), daily.get("sl"), daily.get("tp1"), daily.get("tp2"))
             
         if session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"))
 
-        # 6. Cek WAIT
         if args.cmd == "cron" and daily.get("action") == "WAIT" and session.get("action") == "WAIT":
             print("Cron: Tidak ada setup valid.")
             return
 
-        # 7. Format Telegram (Bersihkan HTML)
+        # --- FORMATTING TELEGRAM YANG LEBIH RAPI ---
         def format_plan(plan, title):
-            if plan.get("action") == "WAIT": return f"⏳ <b>{title}:</b> WAIT\n"
+            if plan.get("action") == "WAIT": 
+                return f"⏳ <b>{title}</b>\n└ Status: WAIT\n"
+                
             return (
-                f"🎯 <b>{title}:</b>\n"
-                f"Action: <b>{plan.get('action')}</b>\n"
-                f"📍 Zona Entry: {plan.get('entry_zone_min')} - {plan.get('entry_zone_max')}\n"
-                f"🛑 SL: {plan.get('sl')} | 💎 TP1: {plan.get('tp1')} | TP2: {plan.get('tp2')}\n"
-                f"⚡ <b>Trigger:</b> {clean_html(plan.get('trigger_entry'))}\n"
-                f"⚠️ <b>Batal Jika:</b> {clean_html(plan.get('dynamic_invalidation'))}\n"
+                f"🎯 <b>{title}</b>\n"
+                f"├ Action: <b>{plan.get('action')}</b>\n"
+                f"├ Zona Entry: <code>{plan.get('entry_zone_min')} - {plan.get('entry_zone_max')}</code>\n"
+                f"├ SL: <code>{plan.get('sl')}</code>\n"
+                f"├ TP1: <code>{plan.get('tp1')}</code>\n"
+                f"├ TP2: <code>{plan.get('tp2')}</code>\n"
+                f"├ ⚡ <b>Trigger:</b> <i>{clean_html(plan.get('trigger_entry'))}</i>\n"
+                f"└ ⚠️ <b>Batal:</b> <i>{clean_html(plan.get('dynamic_invalidation'))}</i>\n"
             )
 
         text = (
-            f"🏛️ <b>[INSTITUTIONAL AI ({args.model.upper()})]</b>\n"
-            f"📊 Pair: <b>{args.symbol}</b> | Bias: <b>{decision.get('bias', '-')}</b>\n"
+            f"🏛️ <b>[HERMES INSTITUTIONAL AI - {args.model.upper()}]</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>Pair:</b> {args.symbol}\n"
+            f"📉 <b>Bias:</b> {decision.get('bias', '-')}\n"
             f"🕒 <b>Sesi:</b> {clean_html(decision.get('session_analysis', '-'))}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🧠 <b>Narrative:</b>\n{clean_html(decision.get('narrative', '-'))}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📌 <b>Key Levels:</b>\n{clean_html(decision.get('key_levels', '-'))}\n"
+            f"🧠 <b>NARRATIVE (Analisa):</b>\n"
+            f"<blockquote>{clean_html(decision.get('narrative', '-'))}</blockquote>\n"
+            f"📌 <b>KEY LEVELS:</b>\n"
+            f"<blockquote>{clean_html(decision.get('key_levels', '-'))}</blockquote>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"{format_plan(daily, 'SETUP 1: DAILY INTRADAY')}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
