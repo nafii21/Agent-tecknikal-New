@@ -1,1 +1,15 @@
-[]
+[
+  {
+    "timestamp": "2026-10-24 15:46:20",
+    "symbol": "BTCUSD",
+    "model": "nemotron",
+    "plan_type": "Daily",
+    "action": "SELL_LIMIT",
+    "entry_min": 79966.0,
+    "entry_max": 80114.0,
+    "sl": 80620.0,
+    "tp1": 79460.0,
+    "tp2": 78890.0,
+    "status": "PENDING"
+  }
+]
