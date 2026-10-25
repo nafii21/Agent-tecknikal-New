@@ -11,18 +11,5 @@
     "tp1": 79165.07,
     "tp2": 78000.0,
     "status": "PENDING"
-  },
-  {
-    "timestamp": "2026-10-24 19:51:59",
-    "symbol": "BTCUSD",
-    "model": "nemotron",
-    "plan_type": "Session",
-    "action": "SELL_LIMIT",
-    "entry_min": 80360.0,
-    "entry_max": 80540.0,
-    "sl": 80650.0,
-    "tp1": 80020.0,
-    "tp2": 79600.0,
-    "status": "PENDING"
   }
 ]
