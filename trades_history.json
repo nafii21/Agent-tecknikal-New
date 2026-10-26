@@ -1,5 +1,18 @@
 [
   {
+    "timestamp": "2026-10-26 01:50:25",
+    "symbol": "GBPUSD",
+    "model": "deepseek",
+    "plan_type": "Session",
+    "action": "BUY_LIMIT",
+    "entry_min": 1.333,
+    "entry_max": 1.334,
+    "sl": 1.3305,
+    "tp1": 1.34,
+    "tp2": 1.343,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-10-24 19:59:14",
     "symbol": "BTCUSD",
     "model": "deepseek",
