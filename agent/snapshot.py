@@ -13,6 +13,15 @@ def get_market_session():
     elif 16 <= hour < 21: return "NEW YORK"
     else: return "AFTER HOURS (Low Liquidity)"
 
+# --- FUNGSI SATPAM FORMAT (Biar nggak error kalau data kosong) ---
+def safe_fmt(val, fmt):
+    try:
+        if val is None or pd.isna(val):
+            return "N/A"
+        return f"{float(val):{fmt}}"
+    except:
+        return "N/A"
+
 def generate_snapshot(symbol: str, raw_data: dict) -> str:
     main_data = raw_data["main"]
     macro = raw_data["macro"]
@@ -49,9 +58,9 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
         last_swing_low = df['swing_low'].dropna().iloc[-1] if not df['swing_low'].dropna().empty else last['low']
         
         report += f"===== {symbol} {tf} =====\n"
-        report += f"Close: {last['close']:.2f} | EMA20: {last['ema20']:.2f} | EMA50: {last['ema50']:.2f}\n"
-        report += f"RSI: {last['rsi']:.1f} | ATR: {last['atr']:.2f} | Trend: {trend}\n"
-        report += f"Swing High: {last_swing_high:.2f} | Swing Low: {last_swing_low:.2f}\n"
+        report += f"Close: {safe_fmt(last['close'], '.2f')} | EMA20: {safe_fmt(last['ema20'], '.2f')} | EMA50: {safe_fmt(last['ema50'], '.2f')}\n"
+        report += f"RSI: {safe_fmt(last['rsi'], '.1f')} | ATR: {safe_fmt(last['atr'], '.2f')} | Trend: {trend}\n"
+        report += f"Swing High: {safe_fmt(last_swing_high, '.2f')} | Swing Low: {safe_fmt(last_swing_low, '.2f')}\n"
         
         # Hitung Pivot & Fibo Lengkap (D1, H4)
         if tf in ["D1", "H4"]:
@@ -67,13 +76,13 @@ def generate_snapshot(symbol: str, raw_data: dict) -> str:
             fibo_786 = high - (diff * 0.786)
             
             report += f"\n[ LEVEL FIBO & PIVOT {tf} ]\n"
-            report += f"Pivot: {p:.2f} | R1: {r1:.2f} | S1: {s1:.2f}\n"
-            report += f"Fibo 38.2%: {fibo_382:.2f} | Fibo 50%: {fibo_50:.2f} | Fibo 61.8%: {fibo_618:.2f} | Fibo 78.6%: {fibo_786:.2f}\n\n"
+            report += f"Pivot: {safe_fmt(p, '.2f')} | R1: {safe_fmt(r1, '.2f')} | S1: {safe_fmt(s1, '.2f')}\n"
+            report += f"Fibo 38.2%: {safe_fmt(fibo_382, '.2f')} | Fibo 50%: {safe_fmt(fibo_50, '.2f')} | Fibo 61.8%: {safe_fmt(fibo_618, '.2f')} | Fibo 78.6%: {safe_fmt(fibo_786, '.2f')}\n\n"
 
     # 2. Konteks Makro
     report += "===== KONTEKS MAKRO (FUNDAMENTAL) =====\n"
-    if "DXY" in macro: report += f"DXY (Dollar): {macro['DXY']['price']} ({macro['DXY']['change_pct']:+.2f}%)\n"
-    if "US10Y" in macro: report += f"US10Y (Bond Yield): {macro['US10Y']['price']}% ({macro['US10Y']['change_pct']:+.2f}%)\n"
+    if "DXY" in macro: report += f"DXY (Dollar): {macro['DXY']['price']} ({safe_fmt(macro['DXY']['change_pct'], '+.2f')}%)\n"
+    if "US10Y" in macro: report += f"US10Y (Bond Yield): {macro['US10Y']['price']}% ({safe_fmt(macro['US10Y']['change_pct'], '+.2f')}%)\n"
     report += "\n"
     
     # 3. Berita
