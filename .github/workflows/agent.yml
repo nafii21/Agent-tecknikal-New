@@ -33,17 +33,16 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # --- INI YANG KETINGGALAN BRO ---
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
           python handler.py --symbol "${{ github.event.inputs.symbol }}" --model "${{ github.event.inputs.model }}" --cmd "${{ github.event.inputs.cmd }}"
 
-      # --- BAGIAN INI YANG DIPERBAIKI BIAR NGGAK BENTROK ---
       - name: Commit Log & Memory Updates
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "GitHub Actions Bot"
           git add log_analisa/ trades_history.json || true
           git commit -m "Update log & memory [skip ci]" || echo "Tidak ada perubahan baru"
-          
-          # Tarik data terbaru dulu buat ngehindarin bentrok
           git pull --rebase origin main || true
           git push || true
