@@ -2,6 +2,7 @@ import os, httpx, yfinance as yf
 import pandas as pd
 import logging
 
+# Matiin warning kuning
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 TWELVE_KEY = os.getenv("TWELVE_DATA_API_KEY")
@@ -33,8 +34,8 @@ TWELVE_TF_MAP = {
 
 def fetch_twelvedata_xauusd():
     if not TWELVE_KEY:
-        raise ValueError("❌ TWELVE_DATA_API_KEY kosong di GitHub Secrets!")
-
+        raise ValueError("API Key Twelve Data kosong di GitHub Secrets!")
+    
     data_dict = {}
     for tf_name, interval in TWELVE_TF_MAP.items():
         try:
@@ -42,15 +43,14 @@ def fetch_twelvedata_xauusd():
             resp = httpx.get(url, timeout=15).json()
             
             if "values" not in resp:
-                # Nangkep pesan error asli dari Twelve Data
-                error_msg = resp.get('message', 'Unknown Error')
-                raise ValueError(f"TwelveData Error [{tf_name}]: {error_msg}")
+                raise ValueError(f"TwelveData Error [{tf_name}]: {resp.get('message', 'No data')}")
                 
             df = pd.DataFrame(resp["values"]).rename(columns={"datetime": "timestamps"})
             for col in ["open", "high", "low", "close"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             
             df = df.dropna(subset=["open", "high", "low", "close"])
+            
             if "volume" in df.columns:
                 df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(1).replace(0, 1)
             else:
@@ -65,8 +65,7 @@ def fetch_twelvedata_xauusd():
 
             data_dict[tf_name] = df
         except Exception as e:
-            # Kalau gagal di satu TF, kita lempar errornya biar berhenti
-            raise ValueError(f"TwelveData Request Error [{tf_name}]: {str(e)}")
+            raise ValueError(f"Gagal narik data Twelve Data [{tf_name}]: {str(e)}")
             
     return data_dict
 
@@ -77,25 +76,26 @@ def fetch_yfinance_data(symbol):
     try:
         tk = yf.Ticker(ticker)
     except Exception as e:
-        raise ValueError(f"Yfinance Ticker Error: {e}")
+        raise ValueError(f"Gagal inisialisasi yfinance: {e}")
 
     for tf_name, params in TF_MAP.items():
         try:
             df = tk.history(interval=params["interval"], period=params["period"], timeout=10)
-            if not df.empty:
-                df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-                if "volume" not in df.columns: df["volume"] = 1
-                df = df.reset_index().rename(columns={"Datetime": "timestamps", "Date": "timestamps"})
-                
-                if tf_name == "H4":
-                    df = df.set_index('timestamps')
-                    df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-                
-                data_dict[tf_name] = df
-            else:
+            if df.empty:
                 raise ValueError(f"yfinance data kosong untuk {tf_name}")
+                
+            df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+            if "volume" not in df.columns: df["volume"] = 1
+            df = df.reset_index().rename(columns={"Datetime": "timestamps", "Date": "timestamps"})
+            
+            if tf_name == "H4":
+                df = df.set_index('timestamps')
+                df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
+            
+            data_dict[tf_name] = df
         except Exception as e:
-            raise ValueError(f"Yfinance Error [{tf_name}]: {str(e)}")
+            raise ValueError(f"yfinance Error [{tf_name}]: {str(e)}")
+            
     return data_dict
 
 def fetch_all_data(symbol: str) -> dict:
@@ -111,15 +111,14 @@ def fetch_all_data(symbol: str) -> dict:
             try:
                 data_dict = fetch_yfinance_data(symbol)
             except Exception as yf_error:
-                # Kalau dua-duanya gagal, kita lempar error gabungan ke Telegram
-                raise RuntimeError(f"Data Gagal Diambil.\n\nTwelveData: {td_error}\nYFinance: {yf_error}")
+                raise RuntimeError(f"DATA GAGAL DIAMBIL!\n\nTwelveData: {td_error}\nYFinance: {yf_error}")
     else:
         try:
             data_dict = fetch_yfinance_data(symbol)
         except Exception as yf_error:
-            raise RuntimeError(f"Yfinance Gagal: {yf_error}")
+            raise RuntimeError(f"DATA GAGAL DIAMBIL!\n\nYFinance: {yf_error}")
     
-    # --- DATA MAKRO ---
+    # Data Makro
     macro_data = {}
     for name, tick in MACRO_TICKERS.items():
         try:
