@@ -21,19 +21,10 @@ def send_tg(text):
         try:
             resp = httpx.post(url, json=payload, timeout=30)
             if not resp.is_success:
+                print(f"❌ Telegram Nolak Pesan: {resp.text}")
                 payload.pop("parse_mode") 
                 httpx.post(url, json=payload, timeout=30)
         except Exception as e: print(f"❌ Gagal kirim: {e}")
-
-def send_photo(path, caption):
-    if TOKEN and CHAT_ID:
-        with open(path, "rb") as f:
-            httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"photo": f}, timeout=30)
-
-def send_document(path, caption):
-    if TOKEN and CHAT_ID:
-        with open(path, "rb") as f:
-            httpx.post(f"https://api.telegram.org/bot{TOKEN}/sendDocument", data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}, files={"document": f}, timeout=30)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -42,7 +33,7 @@ def main():
     parser.add_argument("--cmd")
     args = parser.parse_args()
 
-    # --- FITUR JOURNAL (Teks) ---
+    # --- FITUR JOURNAL ---
     if args.cmd == "journal":
         history = load_history()
         if not history:
@@ -59,26 +50,24 @@ def main():
         send_tg(txt)
         return
 
-    # --- FITUR STATISTIK & CSV (Baru) ---
+    # --- FITUR STATISTIK & CSV ---
     if args.cmd == "stats":
         from agent.report import export_csv, generate_wr_chart
         send_tg("⏳ Membuat Grafik & File CSV...")
-        
         csv_file = export_csv()
         chart_file = generate_wr_chart()
-        
         if not csv_file and not chart_file:
             send_tg("📊 Belum ada data untuk diekspor.")
             return
-            
         if chart_file: send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
-        if csv_file: send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>\nBisa dibuka di Excel/Google Sheets.")
+        if csv_file: send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>")
         return
 
     # --- FITUR ANALISA MARKET ---
     if not args.symbol: return
 
     try:
+        # Di sini kita panggil data.py. Kalau data.py raise error, langsung ditangkep except
         memory_summary = get_memory_summary(args.symbol, args.model)
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
@@ -88,6 +77,7 @@ def main():
         else:
             decision = analyze_deepseek(snapshot_text, memory_summary)
         
+        # Kalau AI error (misal 524), tampilin di Telegram
         if "error" in decision:
             if args.cmd != "cron": send_tg(f"❌ {decision['error']}")
             return
@@ -113,11 +103,9 @@ def main():
         if session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             add_setup(args.symbol, "Session", session.get("action"), session.get("entry_zone_min"), session.get("entry_zone_max"), session.get("sl"), session.get("tp1"), session.get("tp2"), model=args.model)
 
-        if args.cmd == "cron" and daily.get("action") == "WAIT" and session.get("action") == "WAIT":
-            return
-
         def format_plan(plan, title):
-            if plan.get("action") == "WAIT": return f"⏳ <b>{title}</b>\n└ Status: WAIT\n"
+            if plan.get("action") == "WAIT": 
+                return f"⏳ <b>{title}</b>\n└ Status: WAIT (Tidak ada setup valid)\n"
             return (
                 f"🎯 <b>{title}</b>\n├ Action: <b>{plan.get('action')}</b>\n"
                 f"├ Zona Entry: <code>{plan.get('entry_zone_min')} - {plan.get('entry_zone_max')}</code>\n"
@@ -126,10 +114,12 @@ def main():
                 f"└ ⚠️ <b>Batal:</b> <i>{clean_html(plan.get('dynamic_invalidation'))}</i>\n"
             )
 
+        header_title = "AUTO-SCAN SESI" if args.cmd == "cron" else "MANUAL REQUEST"
+
         text = (
-            f"🏛️ <b>[HERMES INSTITUTIONAL AI - {args.model.upper()}]</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 <b>Pair:</b> {args.symbol}\n📉 <b>Bias:</b> {decision.get('bias', '-')}\n"
+            f"🏛️ <b>[HERMES AI - {header_title}]</b>\n"
+            f"📊 <b>Pair:</b> {args.symbol} | 🧠 <b>Model:</b> {args.model.upper()}\n"
+            f"📉 <b>Bias:</b> {decision.get('bias', '-')}\n"
             f"🕒 <b>Sesi:</b> {clean_html(decision.get('session_analysis', '-'))}\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🧠 <b>NARRATIVE:</b>\n<blockquote>{clean_html(decision.get('narrative', '-'))}</blockquote>\n"
@@ -144,7 +134,10 @@ def main():
         send_tg(text)
 
     except Exception as e:
-        if args.cmd != "cron": send_tg(f"❌ Gagal: {str(e)}")
+        # INI YANG NANGKEP ERROR DARI DATA.PY / SNAPSHOT.PY
+        error_msg = str(e)
+        if args.cmd != "cron": 
+            send_tg(f"❌ <b>Data / System Error:</b>\n<code>{error_msg[:1000]}</code>")
 
 if __name__ == "__main__":
     main()
