@@ -2,92 +2,103 @@ import os, httpx, time
 import pandas as pd
 import logging
 
-logging.getLogger("yfinance").setLevel(logging.CRITICAL) # Biarin aja buat matiin warning
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
-TWELVE_KEY = os.getenv("TWELVE_DATA_API_KEY")
+# --- KONFIGURASI FCS API ---
+FCS_KEY = os.getenv("FCS_API_KEY")
 
-# Semua pair dan makro sekarang pakai Twelve Data
-TWELVE_SYMBOLS = {
-    "XAUUSD": "XAU/USD",
-    "BTCUSD": "BTC/USD",
-    "NASDAQ": "QQQ",    # QQQ aman di free tier Twelve Data
-    "EURUSD": "EUR/USD",
-    "GBPUSD": "GBP/USD",
-    "USDJPY": "USD/JPY",
-    "DXY": "DXY",       # US Dollar Index
-    "OIL": "WTI/USD",   # Minyak
-    "US10Y": "US10Y"    # Yield
+# Mapping Simbol FCS API
+FCS_SYMBOLS = {
+    "XAUUSD": "XAUUSD",
+    "BTCUSD": "BTCUSD",
+    "NASDAQ": "NASDAQ", # Mungkin perlu disesuaikan (misal US100)
+    "EURUSD": "EURUSD",
+    "GBPUSD": "GBPUSD",
+    "USDJPY": "USDJPY"
 }
 
-TF_MAP = {
-    "D1": "1day",
-    "H4": "1h",  
+# Mapping Timeframe (FCS API: 15m, 1h, 4h, 1D)
+TF_MAP_FCS = {
+    "D1": "1D",
+    "H4": "4h",
     "H1": "1h",
-    "M15": "15min"
+    "M15": "15m"
 }
 
-def fetch_twelvedata(symbol_name: str, interval: str, outputsize: int = 200):
+# Simbol Makro (Jika didukung FCS, jika tidak akan kosong)
+MACRO_FCS = {
+    "DXY": "DXY",      # Coba DXY
+    "OIL": "WTI",      # Coba WTI
+    "US10Y": "US10Y"   # Coba US10Y
+}
+
+def fetch_fcs_history(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
+    """Fungsi narik data historis dari FCS API"""
     try:
-        url = f"https://api.twelvedata.com/time_series?symbol={symbol_name}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_KEY}"
-        resp = httpx.get(url, timeout=15).json()
+        url = f"https://api-v4.fcsapi.com/forex/history?symbol={symbol}&period={interval}&access_key={FCS_KEY}"
+        resp = httpx.get(url, timeout=20).json()
         
-        if "values" not in resp:
+        if not resp.get("status") or "response" not in resp:
+            print(f"FCS API Error [{symbol} {interval}]: {resp.get('msg', 'No data')}")
             return None
             
-        df = pd.DataFrame(resp["values"]).rename(columns={"datetime": "timestamps"})
-        for col in ["open", "high", "low", "close"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+        raw_data = resp["response"]
+        records = []
         
-        df = df.dropna(subset=["open", "high", "low", "close"])
+        # Format respons FCS: { "timestamp": { "o":..., "h":..., "l":..., "c":... } }
+        for ts, vals in raw_data.items():
+            records.append({
+                "timestamps": pd.to_datetime(int(ts), unit='s'),
+                "open": float(vals.get("o", 0)),
+                "high": float(vals.get("h", 0)),
+                "low": float(vals.get("l", 0)),
+                "close": float(vals.get("c", 0)),
+                "volume": float(vals.get("v", 1)) if "v" in vals else 1.0
+            })
+            
+        df = pd.DataFrame(records)
+        if df.empty: return None
         
-        if "volume" in df.columns:
-            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(1).replace(0, 1)
-        else:
-            df["volume"] = 1
-        
-        df["timestamps"] = pd.to_datetime(df["timestamps"])
         df = df.sort_values("timestamps").reset_index(drop=True)
-        
         return df
+        
     except Exception as e:
-        print(f"Error fetching {symbol_name} {interval}: {e}")
+        print(f"FCS Request Error [{symbol} {interval}]: {e}")
         return None
 
 def fetch_all_data(symbol: str) -> dict:
-    if not TWELVE_KEY:
-        raise ValueError("API Key Twelve Data kosong di GitHub Secrets!")
+    if not FCS_KEY:
+        raise ValueError("API Key FCS API kosong di GitHub Secrets!")
 
     data_dict = {}
-    tw_symbol = TWELVE_SYMBOLS.get(symbol.upper(), symbol)
+    fcs_sym = FCS_SYMBOLS.get(symbol.upper(), symbol)
     
-    print(f"Fetching {symbol} from TwelveData...")
+    print(f"Fetching {symbol} from FCS API...")
     
     # 1. Narik Data Utama (4 Timeframe)
-    for tf_name, interval in TF_MAP.items():
-        df = fetch_twelvedata(tw_symbol, interval)
+    for tf_name, interval in TF_MAP_FCS.items():
+        df = fetch_fcs_history(fcs_sym, interval)
         
         if df is not None:
-            if tf_name == "H4":
-                df = df.set_index('timestamps')
-                df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
+            # Khusus H4, kita resample dari data 1h jika FCS ngasih 1h
+            # TAPI FCS udah support 4h, jadi langsung pakai
             data_dict[tf_name] = df
         
-        # Kasih jeda 1.5 detik biar nggak kena rate limit 8 req/menit Twelve Data
-        time.sleep(1.5)
+        # Jeda 2 detik biar nggak kena rate limit (500 req/bulan)
+        time.sleep(2)
         
     if "D1" not in data_dict or "H4" not in data_dict:
-        raise ValueError("Data Utama (D1/H4) gagal ditarik dari Twelve Data. Cek limit atau API Key.")
+        raise ValueError("Data Utama (D1/H4) gagal ditarik dari FCS API. Cek limit atau API Key.")
 
-    # 2. Narik Data Makro
+    # 2. Narik Data Makro (Coba-coba, kalau gagal kosongin)
     macro_data = {}
-    for macro_key, macro_sym in [("DXY", "DXY"), ("OIL", "WTI/USD"), ("US10Y", "US10Y")]:
-        df_m = fetch_twelvedata(macro_sym, "1day", outputsize=5)
+    for macro_key, macro_sym in MACRO_FCS.items():
+        df_m = fetch_fcs_history(macro_sym, "1D", limit=5)
         if df_m is not None and len(df_m) >= 2:
             change = ((df_m['close'].iloc[-1] - df_m['close'].iloc[-2]) / df_m['close'].iloc[-2]) * 100
             macro_data[macro_key] = {"price": round(float(df_m['close'].iloc[-1]), 2), "change_pct": round(float(change), 2)}
         
-        # Jeda lagi
-        time.sleep(1.5)
+        time.sleep(2) # Jeda lagi
 
-    print("Data fetching selesai!")
+    print("Data fetching dari FCS API selesai!")
     return {"main": data_dict, "macro": macro_data}
