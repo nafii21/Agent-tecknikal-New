@@ -9,7 +9,7 @@ FCS_KEY = os.getenv("FCS_API_KEY")
 FCS_SYMBOLS = {
     "XAUUSD": "XAUUSD",
     "BTCUSD": "BTCUSD",
-    "NASDAQ": "US100", # <--- GANTI KE US100 (Simbol Indeks di FCS)
+    "NASDAQ": "US100", 
     "EURUSD": "EURUSD",
     "GBPUSD": "GBPUSD",
     "USDJPY": "USDJPY"
@@ -35,7 +35,6 @@ def fetch_fcs_history(symbol: str, interval: str, limit: int = 200) -> pd.DataFr
         
         if not resp.get("status") or "response" not in resp:
             error_msg = resp.get('msg', 'No data')
-            # LEMPAR ERROR ASLI DARI FCS API
             raise ValueError(f"FCS Error [{symbol} {interval}]: {error_msg}")
             
         raw_data = resp["response"]
@@ -59,7 +58,6 @@ def fetch_fcs_history(symbol: str, interval: str, limit: int = 200) -> pd.DataFr
         return df
         
     except Exception as e:
-        # Teruskan error ke atas
         raise e
 
 def fetch_all_data(symbol: str) -> dict:
@@ -69,7 +67,7 @@ def fetch_all_data(symbol: str) -> dict:
     data_dict = {}
     fcs_sym = FCS_SYMBOLS.get(symbol.upper(), symbol)
     
-    print(f"Fetching {symbol} from FCS API...")
+    print(f"Fetching {symbol} from FCS API (Delay 22s per request)...")
     
     # 1. Narik Data Utama (4 Timeframe)
     for tf_name, interval in TF_MAP_FCS.items():
@@ -78,14 +76,14 @@ def fetch_all_data(symbol: str) -> dict:
             if df is not None:
                 data_dict[tf_name] = df
         except Exception as e:
-            # Kalau gagal, lempar error biar muncul di Telegram
             raise ValueError(f"Gagal narik data {tf_name} ({symbol}): {str(e)}")
         finally:
-            # Jeda 2 detik biar nggak kena rate limit
-            time.sleep(2)
+            # JEDA 22 DETIK BIAR NGGAK KENA RATE LIMIT (3 req/min)
+            print(f"Jeda 22 detik sebelum request berikutnya...")
+            time.sleep(22)
         
     if "D1" not in data_dict or "H4" not in data_dict:
-        raise ValueError("Data Utama (D1/H4) gagal ditarik dari FCS API. Cek limit atau API Key.")
+        raise ValueError("Data Utama (D1/H4) gagal ditarik dari FCS API.")
 
     # 2. Narik Data Makro
     macro_data = {}
@@ -98,7 +96,7 @@ def fetch_all_data(symbol: str) -> dict:
         except Exception as e:
             print(f"Macro {macro_key} gagal: {e}")
         finally:
-            time.sleep(2)
+            time.sleep(22) # Jeda lagi buat makro
 
     print("Data fetching dari FCS API selesai!")
     return {"main": data_dict, "macro": macro_data}
