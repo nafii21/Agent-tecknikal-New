@@ -16,7 +16,7 @@ ATURAN ANALISIS:
 ATURAN ENTRY (DYNAMIC ENTRY):
 - JANGAN asal kasih harga mati. Berikan "entry_zone" (Zona Entry).
 - Berikan "trigger_entry": Syarat pasti kapan harus masuk (misal: "Tunggu candle M15 close di atas X").
-- Berikan "dynamic_invalidation": Kapan setup ini Batal sebelum kena Entry (misal: "Batal jika harga sudah turun melewati 4095 sebelum order terisi").
+- Berikan "dynamic_invalidation": Kapan setup ini Batal sebelum kena Entry.
 
 OUTPUT HARUS JSON VALID:
 {
@@ -51,13 +51,16 @@ OUTPUT HARUS JSON VALID:
 # SATPAM MATEMATIKA (Berlaku untuk semua model)
 # ==========================================
 def validate_setup(plan, plan_name):
+    """Fungsi buat ngecek logika SL/TP dan RR minimal 1:2"""
     if plan.get("action") not in ["BUY_LIMIT", "SELL_LIMIT"]: return plan
     try:
         e_min, e_max = float(plan.get("entry_zone_min", 0)), float(plan.get("entry_zone_max", 0))
         sl, tp1 = float(plan.get("sl", 0)), float(plan.get("tp1", 0))
+        
+        # Ambil harga rata-rata dari zona entry
         entry_avg = (e_min + e_max) / 2
         
-        # 1. Cek Arah SL
+        # 1. Cek Arah SL (BUY harus di bawah, SELL harus di atas)
         if plan["action"] == "BUY_LIMIT" and sl >= e_min:
             plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: SL tidak valid untuk BUY (harus di bawah entry)."; return plan
         if plan["action"] == "SELL_LIMIT" and sl <= e_max:
@@ -72,13 +75,13 @@ def validate_setup(plan, plan_name):
             
         rr = reward1 / risk
         if rr < 1.9: # Kasih toleransi tipis 1.9
-            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = f"SISTEM BATAL: RR terlalu kecil (1:{rr:.2f}). AI melanggar aturan minimal 1:2."; return plan
+            plan["action"] = "WAIT"; plan["dynamic_invalidation"] = f"SISTEM BATAL: RR TP1 terlalu kecil (1:{rr:.2f}). AI melanggar aturan minimal 1:2."; return plan
             
         # 3. Cek SL Kegedean (Maksimal 5% dari harga entry)
         if risk > (entry_avg * 0.05):
             plan["action"] = "WAIT"; plan["dynamic_invalidation"] = "SISTEM BATAL: Jarak SL terlalu lebar (Risk > 5% harga)."; return plan
 
-        # Rapihin format angka
+        # Format angka biar rapi
         plan["entry_zone_min"], plan["entry_zone_max"], plan["sl"], plan["tp1"] = e_min, e_max, sl, tp1
         plan["tp2"] = float(plan.get("tp2", 0))
     except Exception as e:
@@ -86,7 +89,7 @@ def validate_setup(plan, plan_name):
     return plan
 
 # ==========================================
-# 1. FUNGSI ANALISA UNTUK NEMOTRON (PAKAI SATPAM)
+# 1. FUNGSI ANALISA KHUSUS NEMOTRON (SEKARANG PAKE SATPAM)
 # ==========================================
 def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
     client = OpenAI(
@@ -94,7 +97,6 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
         api_key=os.environ.get("OPENROUTER_API_KEY", "")
     )
     MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
-    
     user_payload = f"{memory_summary}\n\n=== DATA MARKET SAAT INI ===\n{snapshot_text}"
     
     try:
@@ -106,10 +108,11 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
             ],
             temperature=0.2,
             response_format={"type": "json_object"},
+            timeout=90
         )
         result = json.loads(resp.choices[0].message.content)
         
-        # Panggil Satpam Matematika
+        # --- PANGGIL SATPAM DI SINI ---
         if "setup_daily" in result: result["setup_daily"] = validate_setup(result["setup_daily"], "Daily")
         if "setup_session" in result: result["setup_session"] = validate_setup(result["setup_session"], "Session")
             
@@ -118,7 +121,7 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
         return {"error": f"Nemotron Error: {str(e)}"}
 
 # ==========================================
-# 2. FUNGSI ANALISA UNTUK DEEPSEEK (PAKAI SATPAM)
+# 2. FUNGSI ANALISA KHUSUS DEEPSEEK (TETEP PAKE SATPAM)
 # ==========================================
 def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
     client = OpenAI(
@@ -126,7 +129,6 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
         api_key=os.environ.get("SAKELAR_API_KEY", "")
     )
     MODEL = "deepseek-v4.1-flash"
-    
     user_payload = f"{memory_summary}\n\n=== DATA MARKET SAAT INI ===\n{snapshot_text}"
     
     try:
@@ -138,10 +140,11 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
             ],
             temperature=0.2,
             response_format={"type": "json_object"},
+            timeout=90
         )
         result = json.loads(resp.choices[0].message.content)
         
-        # Panggil Satpam Matematika
+        # --- PANGGIL SATPAM DI SINI ---
         if "setup_daily" in result: result["setup_daily"] = validate_setup(result["setup_daily"], "Daily")
         if "setup_session" in result: result["setup_session"] = validate_setup(result["setup_session"], "Session")
             
