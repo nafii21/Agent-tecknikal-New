@@ -2,6 +2,10 @@ import json, os
 from datetime import datetime
 import pandas as pd
 import yfinance as yf
+import logging
+
+# Matiin warning
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 HISTORY_FILE = "trades_history.json"
 
@@ -19,7 +23,7 @@ def add_setup(symbol, plan_type, action, entry_min, entry_max, sl, tp1, tp2, mod
     setup = {
         "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol": symbol,
-        "model": model, # <-- Tambahan: Nyimpen nama model
+        "model": model,
         "plan_type": plan_type,
         "action": action,
         "entry_min": float(entry_min),
@@ -39,14 +43,16 @@ def update_statuses(symbol):
     
     try:
         ticker = {"XAUUSD": "GC=F", "BTCUSD": "BTC-USD", "NASDAQ": "NQ=F", "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X"}.get(symbol.upper(), symbol)
-        df = yf.download(ticker, period="5d", interval="5m", progress=False, timeout=15)
+        tk = yf.Ticker(ticker)
+        
+        # PAKE history() BUKAN download() BIAR GA HANG
+        df = tk.history(period="5d", interval="5m", timeout=15)
         if df.empty: return
         
-        if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
-        df.columns = [col.lower() if isinstance(col, str) else col for col in df.columns]
-        
-        df = df.reset_index().rename(columns={"datetime": "time"})
-        df['time'] = pd.to_datetime(df['time']).dt.tz_localize(None)
+        df = df.reset_index()
+        # Pastiin format index waktunya sinkron
+        df['Datetime'] = pd.to_datetime(df['Datetime']).dt.tz_localize(None)
+        df = df.rename(columns={"Datetime": "time", "Open": "open", "High": "high", "Low": "low", "Close": "close"})
         
     except Exception as e:
         print(f"Gagal update memori: {e}")
@@ -105,7 +111,6 @@ def get_memory_summary(symbol, model="unknown"):
     update_statuses(symbol)
     data = load_history()
     
-    # FILTER: Hanya ngambil history dari symbol DAN model yang sama
     pair_data = [x for x in data if x['symbol'] == symbol and x.get('model') == model and x['status'] not in ['PENDING', 'EXPIRED']]
     
     if not pair_data:
