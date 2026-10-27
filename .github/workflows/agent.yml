@@ -29,13 +29,12 @@ jobs:
 
       - name: Run Agent
         env:
-          # --- INI YANG KETINGGALAN BRO ---
-          FCS_API_KEY: ${{ secrets.FCS_API_KEY }}
+          # --- KUNCI YANG DIPAKE SEKARANG ---
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           SAKELAR_API_KEY: ${{ secrets.SAKELAR_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
           python handler.py --symbol "${{ github.event.inputs.symbol }}" --model "${{ github.event.inputs.model }}" --cmd "${{ github.event.inputs.cmd }}"
 
