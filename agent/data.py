@@ -1,5 +1,9 @@
 import os, httpx, yfinance as yf
 import pandas as pd
+import logging
+
+# --- MATIKAN WARNING YANG BIKIN SPAM ---
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 TWELVE_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
@@ -23,13 +27,12 @@ TF_MAP = {
 
 TWELVE_TF_MAP = {
     "D1": "1day",
-    "H4": "1h",  # Twelve Data gratis ga support 4h, jadi kita ambil 1h terus digabung
+    "H4": "1h",  
     "H1": "1h",
     "M15": "15min"
 }
 
 def fetch_twelvedata_xauusd():
-    """Fungsi khusus narik XAUUSD dari Twelve Data"""
     if not TWELVE_KEY:
         print("❌ TWELVE_DATA_API_KEY kosong di GitHub Secrets!")
         return {}
@@ -45,12 +48,10 @@ def fetch_twelvedata_xauusd():
                 continue
                 
             df = pd.DataFrame(resp["values"]).rename(columns={"datetime": "timestamps"})
-            
             for col in ["open", "high", "low", "close"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             
             df = df.dropna(subset=["open", "high", "low", "close"])
-            
             if "volume" in df.columns:
                 df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(1).replace(0, 1)
             else:
@@ -59,7 +60,6 @@ def fetch_twelvedata_xauusd():
             df["timestamps"] = pd.to_datetime(df["timestamps"])
             df = df.sort_values("timestamps").reset_index(drop=True)
             
-            # Khusus H4, kita gabungin data 1h jadi 4h
             if tf_name == "H4":
                 df = df.set_index('timestamps')
                 df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
@@ -71,16 +71,20 @@ def fetch_twelvedata_xauusd():
     return data_dict
 
 def fetch_yfinance_data(symbol):
-    """Fungsi cadangan kalau Twelve Data mati"""
     ticker = SYMBOLS.get(symbol.upper(), symbol)
     data_dict = {}
+    
+    try:
+        tk = yf.Ticker(ticker)
+    except:
+        return {}
+
     for tf_name, params in TF_MAP.items():
         try:
-            df = yf.download(ticker, interval=params["interval"], period=params["period"], progress=False, timeout=10, threads=False)
+            # PAKE history() BUKAN download() BIAR GA HANG
+            df = tk.history(interval=params["interval"], period=params["period"], timeout=10)
             if not df.empty:
-                if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
                 df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-                
                 if "volume" not in df.columns: df["volume"] = 1
                 df = df.reset_index().rename(columns={"Datetime": "timestamps", "Date": "timestamps"})
                 
@@ -96,25 +100,22 @@ def fetch_yfinance_data(symbol):
 def fetch_all_data(symbol: str) -> dict:
     data_dict = {}
     
-    # --- 1. ROUTING DATA UTAMA ---
     if symbol.upper() == "XAUUSD":
         print("Fetching XAUUSD from TwelveData...")
         data_dict = fetch_twelvedata_xauusd()
-        
-        # JARING PENGAMAN: Kalau Twelve Data gagal, pake yfinance
         if not data_dict:
             print("⚠️ TwelveData gagal! Beralih ke yfinance...")
             data_dict = fetch_yfinance_data(symbol)
     else:
         data_dict = fetch_yfinance_data(symbol)
     
-    # --- 2. DATA MAKRO (Selalu pake yfinance) ---
     macro_data = {}
     for name, tick in MACRO_TICKERS.items():
         try:
-            df_m = yf.download(tick, period="5d", interval="1d", progress=False, timeout=10, threads=False)
+            tk = yf.Ticker(tick)
+            df_m = tk.history(period="5d", interval="1d", timeout=10)
             if not df_m.empty:
-                if hasattr(df_m.columns, 'levels'): df_m.columns = df_m.columns.get_level_values(0)
+                df_m = df_m.reset_index()
                 change = ((df_m['Close'].iloc[-1] - df_m['Close'].iloc[-2]) / df_m['Close'].iloc[-2]) * 100
                 macro_data[name] = {"price": round(float(df_m['Close'].iloc[-1]), 2), "change_pct": round(float(change), 2)}
         except:
