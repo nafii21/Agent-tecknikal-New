@@ -1,134 +1,93 @@
-import os, httpx, yfinance as yf
+import os, httpx, time
 import pandas as pd
 import logging
 
-# Matiin warning kuning
-logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("yfinance").setLevel(logging.CRITICAL) # Biarin aja buat matiin warning
 
 TWELVE_KEY = os.getenv("TWELVE_DATA_API_KEY")
 
-SYMBOLS = {
-    "XAUUSD": "GC=F", 
-    "NASDAQ": "NQ=F",
-    "EURUSD": "EURUSD=X", 
-    "GBPUSD": "GBPUSD=X", 
-    "USDJPY": "JPY=X",
-    "BTCUSD": "BTC-USD"
+# Semua pair dan makro sekarang pakai Twelve Data
+TWELVE_SYMBOLS = {
+    "XAUUSD": "XAU/USD",
+    "BTCUSD": "BTC/USD",
+    "NASDAQ": "QQQ",    # QQQ aman di free tier Twelve Data
+    "EURUSD": "EUR/USD",
+    "GBPUSD": "GBP/USD",
+    "USDJPY": "USD/JPY",
+    "DXY": "DXY",       # US Dollar Index
+    "OIL": "WTI/USD",   # Minyak
+    "US10Y": "US10Y"    # Yield
 }
-
-MACRO_TICKERS = {"DXY": "DX-Y.NYB", "OIL": "CL=F", "US10Y": "^TNX"}
 
 TF_MAP = {
-    "D1": {"interval": "1d", "period": "1y"},
-    "H4": {"interval": "1h", "period": "1mo"},
-    "H1": {"interval": "1h", "period": "5d"},
-    "M15": {"interval": "15m", "period": "5d"}
-}
-
-TWELVE_TF_MAP = {
     "D1": "1day",
     "H4": "1h",  
     "H1": "1h",
     "M15": "15min"
 }
 
-def fetch_twelvedata_xauusd():
-    if not TWELVE_KEY:
-        raise ValueError("API Key Twelve Data kosong di GitHub Secrets!")
-    
-    data_dict = {}
-    for tf_name, interval in TWELVE_TF_MAP.items():
-        try:
-            url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize=200&apikey={TWELVE_KEY}"
-            resp = httpx.get(url, timeout=15).json()
-            
-            if "values" not in resp:
-                raise ValueError(f"TwelveData Error [{tf_name}]: {resp.get('message', 'No data')}")
-                
-            df = pd.DataFrame(resp["values"]).rename(columns={"datetime": "timestamps"})
-            for col in ["open", "high", "low", "close"]:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-            
-            df = df.dropna(subset=["open", "high", "low", "close"])
-            
-            if "volume" in df.columns:
-                df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(1).replace(0, 1)
-            else:
-                df["volume"] = 1
-            
-            df["timestamps"] = pd.to_datetime(df["timestamps"])
-            df = df.sort_values("timestamps").reset_index(drop=True)
-            
-            if tf_name == "H4":
-                df = df.set_index('timestamps')
-                df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-
-            data_dict[tf_name] = df
-        except Exception as e:
-            raise ValueError(f"Gagal narik data Twelve Data [{tf_name}]: {str(e)}")
-            
-    return data_dict
-
-def fetch_yfinance_data(symbol):
-    ticker = SYMBOLS.get(symbol.upper(), symbol)
-    data_dict = {}
-    
+def fetch_twelvedata(symbol_name: str, interval: str, outputsize: int = 200):
     try:
-        tk = yf.Ticker(ticker)
+        url = f"https://api.twelvedata.com/time_series?symbol={symbol_name}&interval={interval}&outputsize={outputsize}&apikey={TWELVE_KEY}"
+        resp = httpx.get(url, timeout=15).json()
+        
+        if "values" not in resp:
+            return None
+            
+        df = pd.DataFrame(resp["values"]).rename(columns={"datetime": "timestamps"})
+        for col in ["open", "high", "low", "close"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        
+        df = df.dropna(subset=["open", "high", "low", "close"])
+        
+        if "volume" in df.columns:
+            df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(1).replace(0, 1)
+        else:
+            df["volume"] = 1
+        
+        df["timestamps"] = pd.to_datetime(df["timestamps"])
+        df = df.sort_values("timestamps").reset_index(drop=True)
+        
+        return df
     except Exception as e:
-        raise ValueError(f"Gagal inisialisasi yfinance: {e}")
-
-    for tf_name, params in TF_MAP.items():
-        try:
-            df = tk.history(interval=params["interval"], period=params["period"], timeout=10)
-            if df.empty:
-                raise ValueError(f"yfinance data kosong untuk {tf_name}")
-                
-            df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-            if "volume" not in df.columns: df["volume"] = 1
-            df = df.reset_index().rename(columns={"Datetime": "timestamps", "Date": "timestamps"})
-            
-            if tf_name == "H4":
-                df = df.set_index('timestamps')
-                df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-            
-            data_dict[tf_name] = df
-        except Exception as e:
-            raise ValueError(f"yfinance Error [{tf_name}]: {str(e)}")
-            
-    return data_dict
+        print(f"Error fetching {symbol_name} {interval}: {e}")
+        return None
 
 def fetch_all_data(symbol: str) -> dict:
+    if not TWELVE_KEY:
+        raise ValueError("API Key Twelve Data kosong di GitHub Secrets!")
+
     data_dict = {}
+    tw_symbol = TWELVE_SYMBOLS.get(symbol.upper(), symbol)
     
-    if symbol.upper() == "XAUUSD":
-        print("Fetching XAUUSD from TwelveData...")
-        try:
-            data_dict = fetch_twelvedata_xauusd()
-        except Exception as td_error:
-            print(f"⚠️ TwelveData Gagal: {td_error}")
-            print("Mencoba beralih ke yfinance...")
-            try:
-                data_dict = fetch_yfinance_data(symbol)
-            except Exception as yf_error:
-                raise RuntimeError(f"DATA GAGAL DIAMBIL!\n\nTwelveData: {td_error}\nYFinance: {yf_error}")
-    else:
-        try:
-            data_dict = fetch_yfinance_data(symbol)
-        except Exception as yf_error:
-            raise RuntimeError(f"DATA GAGAL DIAMBIL!\n\nYFinance: {yf_error}")
+    print(f"Fetching {symbol} from TwelveData...")
     
-    # Data Makro
+    # 1. Narik Data Utama (4 Timeframe)
+    for tf_name, interval in TF_MAP.items():
+        df = fetch_twelvedata(tw_symbol, interval)
+        
+        if df is not None:
+            if tf_name == "H4":
+                df = df.set_index('timestamps')
+                df = df.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
+            data_dict[tf_name] = df
+        
+        # Kasih jeda 1.5 detik biar nggak kena rate limit 8 req/menit Twelve Data
+        time.sleep(1.5)
+        
+    if "D1" not in data_dict or "H4" not in data_dict:
+        raise ValueError("Data Utama (D1/H4) gagal ditarik dari Twelve Data. Cek limit atau API Key.")
+
+    # 2. Narik Data Makro
     macro_data = {}
-    for name, tick in MACRO_TICKERS.items():
-        try:
-            tk = yf.Ticker(tick)
-            df_m = tk.history(period="5d", interval="1d", timeout=10)
-            if not df_m.empty:
-                df_m = df_m.reset_index()
-                change = ((df_m['Close'].iloc[-1] - df_m['Close'].iloc[-2]) / df_m['Close'].iloc[-2]) * 100
-                macro_data[name] = {"price": round(float(df_m['Close'].iloc[-1]), 2), "change_pct": round(float(change), 2)}
-        except:
-            pass
-            
+    for macro_key, macro_sym in [("DXY", "DXY"), ("OIL", "WTI/USD"), ("US10Y", "US10Y")]:
+        df_m = fetch_twelvedata(macro_sym, "1day", outputsize=5)
+        if df_m is not None and len(df_m) >= 2:
+            change = ((df_m['close'].iloc[-1] - df_m['close'].iloc[-2]) / df_m['close'].iloc[-2]) * 100
+            macro_data[macro_key] = {"price": round(float(df_m['close'].iloc[-1]), 2), "change_pct": round(float(change), 2)}
+        
+        # Jeda lagi
+        time.sleep(1.5)
+
+    print("Data fetching selesai!")
     return {"main": data_dict, "macro": macro_data}
