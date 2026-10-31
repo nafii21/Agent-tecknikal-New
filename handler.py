@@ -26,6 +26,28 @@ def send_tg(text):
                 httpx.post(url, json=payload, timeout=30)
         except Exception as e: print(f"❌ Gagal kirim: {e}")
 
+# --- FUNGSI BARU: KIRIM GAMBAR ---
+def send_photo(photo_path, caption):
+    if TOKEN and CHAT_ID:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+        try:
+            with open(photo_path, "rb") as f:
+                files = {"photo": f}
+                data = {"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}
+                httpx.post(url, data=data, files=files, timeout=30)
+        except Exception as e: print(f"❌ Gagal kirim foto: {e}")
+
+# --- FUNGSI BARU: KIRIM FILE CSV ---
+def send_document(doc_path, caption):
+    if TOKEN and CHAT_ID:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
+        try:
+            with open(doc_path, "rb") as f:
+                files = {"document": f}
+                data = {"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}
+                httpx.post(url, data=data, files=files, timeout=30)
+        except Exception as e: print(f"❌ Gagal kirim dokumen: {e}")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
@@ -59,15 +81,16 @@ def main():
         if not csv_file and not chart_file:
             send_tg("📊 Belum ada data untuk diekspor.")
             return
-        if chart_file: send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
-        if csv_file: send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>")
+        if chart_file: 
+            send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
+        if csv_file: 
+            send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>")
         return
 
     # --- FITUR ANALISA MARKET ---
     if not args.symbol: return
 
     try:
-        # Di sini kita panggil data.py. Kalau data.py raise error, langsung ditangkep except
         memory_summary = get_memory_summary(args.symbol, args.model)
         raw_data = fetch_all_data(args.symbol)
         snapshot_text = generate_snapshot(args.symbol, raw_data)
@@ -77,7 +100,6 @@ def main():
         else:
             decision = analyze_deepseek(snapshot_text, memory_summary)
         
-        # Kalau AI error (misal 524), tampilin di Telegram
         if "error" in decision:
             if args.cmd != "cron": send_tg(f"❌ {decision['error']}")
             return
@@ -134,7 +156,6 @@ def main():
         send_tg(text)
 
     except Exception as e:
-        # INI YANG NANGKEP ERROR DARI DATA.PY / SNAPSHOT.PY
         error_msg = str(e)
         if args.cmd != "cron": 
             send_tg(f"❌ <b>Data / System Error:</b>\n<code>{error_msg[:1000]}</code>")
