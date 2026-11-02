@@ -5,6 +5,7 @@ from agent.data import fetch_all_data
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze_deepseek, analyze_nemotron
 from agent.memory import get_memory_summary, add_setup, load_history
+from agent.mika_bridge import send_task_to_mika # <--- TAMBAHAN IMPORT MIKA
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -154,6 +155,40 @@ def main():
             f"📝 <i>Log: {filename}</i>"
         )
         send_tg(text)
+
+        # ==========================================
+        # --- TAMBAHAN BARU: EKSEKUSI OTOMATIS KE MIKA ---
+        # ==========================================
+        # Kita pilih salah satu setup yang valid buat dikirim ke MIKA
+        trade_to_execute = None
+        
+        # Prioritas 1: Cek Setup Daily
+        if daily.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
+            trade_to_execute = daily
+        # Prioritas 2: Kalau Daily WAIT, cek Setup Session
+        elif session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
+            trade_to_execute = session
+
+        # Kalau ada setup yang valid, kirim perintah ke MIKA
+        if trade_to_execute:
+            # Hitung rata-rata harga entry buat dikasih ke MIKA
+            entry_min = float(trade_to_execute.get("entry_zone_min", 0))
+            entry_max = float(trade_to_execute.get("entry_zone_max", 0))
+            entry_avg = round((entry_min + entry_max) / 2, 2)
+            
+            # Susun perintah bahasa manusia biar MIKA gampang ngertinya
+            mika_prompt = (
+                f"Buka aplikasi MetaTrader 5. "
+                f"Pasang order {trade_to_execute.get('action')} untuk {args.symbol} "
+                f"di harga {entry_avg}. "
+                f"Stop Loss di {trade_to_execute.get('sl')}. "
+                f"Take Profit di {trade_to_execute.get('tp1')}. "
+                f"Gunakan lot 0.01. Tekan tombol Place Order setelah data dimasukkan."
+            )
+            
+            # Eksekusi kirim ke MIKA via Cloudflare Tunnel
+            print("Mengirim perintah ke MIKA...")
+            send_task_to_mika(mika_prompt)
 
     except Exception as e:
         error_msg = str(e)
