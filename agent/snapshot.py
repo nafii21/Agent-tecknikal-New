@@ -7,11 +7,22 @@ from agent.news import get_market_news
 def get_market_session():
     now_utc = datetime.now(pytz.utc)
     hour = now_utc.hour
-    if 0 <= hour < 7: return "ASIA (Tokyo)"
-    elif 7 <= hour < 12: return "LONDON"
-    elif 12 <= hour < 16: return "OVERLAP (London & New York) - HIGH VOLATILITY"
-    elif 16 <= hour < 21: return "NEW YORK"
-    else: return "AFTER HOURS (Low Liquidity)"
+    
+    # Jadwal Musim Dingin (November - Maret)
+    # London: 08:00 - 17:00 UTC
+    # New York: 13:00 - 22:00 UTC
+    # Overlap (London + NY): 13:00 - 17:00 UTC
+    
+    if 0 <= hour < 8: 
+        return "ASIA (Tokyo)"
+    elif 8 <= hour < 13: 
+        return "LONDON"
+    elif 13 <= hour < 17: 
+        return "OVERLAP (London & New York) - HIGH VOLATILITY"
+    elif 17 <= hour < 22: 
+        return "NEW YORK"
+    else: 
+        return "AFTER HOURS (Low Liquidity)"
 
 def safe_fmt(val, fmt):
     try:
