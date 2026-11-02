@@ -5,7 +5,7 @@ from agent.data import fetch_all_data
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze_deepseek, analyze_nemotron
 from agent.memory import get_memory_summary, add_setup, load_history
-from agent.mika_bridge import send_task_to_mika # <--- TAMBAHAN IMPORT MIKA
+from agent.mika_bridge import send_task_to_mika
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -27,7 +27,6 @@ def send_tg(text):
                 httpx.post(url, json=payload, timeout=30)
         except Exception as e: print(f"❌ Gagal kirim: {e}")
 
-# --- FUNGSI BARU: KIRIM GAMBAR ---
 def send_photo(photo_path, caption):
     if TOKEN and CHAT_ID:
         url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
@@ -38,7 +37,6 @@ def send_photo(photo_path, caption):
                 httpx.post(url, data=data, files=files, timeout=30)
         except Exception as e: print(f"❌ Gagal kirim foto: {e}")
 
-# --- FUNGSI BARU: KIRIM FILE CSV ---
 def send_document(doc_path, caption):
     if TOKEN and CHAT_ID:
         url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
@@ -56,8 +54,28 @@ def main():
     parser.add_argument("--cmd")
     args = parser.parse_args()
 
+    # --- FITUR BARU: TES JEMBATAN MIKA ---
+    if args.cmd == "test_mika":
+        send_tg("⏳ Mengirim perintah tes ke MIKA di HP lo...\nCek layar HP lo!")
+        
+        test_prompt = (
+            "Halo MIKA! Ini adalah pesan tes dari Hermes (GitHub). "
+            "Tolong buka aplikasi MT5, lalu ketik pesan 'JEMBATAN BERHASIL' di kolom chat MIKA. "
+            "Jangan eksekusi order apapun, ini cuma tes koneksi."
+        )
+        
+        sukses = send_task_to_mika(test_prompt)
+        
+        if sukses:
+            send_tg("✅ Perintah tes BERHASIL terkirim ke MIKA!\nSilakan cek HP lo, MIKA harusnya mulai bergerak.")
+        else:
+            send_tg("❌ GAGAL kirim ke MIKA.\nCek URL Cloudflare atau Token di GitHub Secrets.")
+        return
+    # ------------------------------------
+
     # --- FITUR JOURNAL ---
     if args.cmd == "journal":
+        # ... (kode journal lo yang lama tetep sama) ...
         history = load_history()
         if not history:
             send_tg("📖 Belum ada catatan journal.")
@@ -75,6 +93,7 @@ def main():
 
     # --- FITUR STATISTIK & CSV ---
     if args.cmd == "stats":
+        # ... (kode stats lo yang lama tetep sama) ...
         from agent.report import export_csv, generate_wr_chart
         send_tg("⏳ Membuat Grafik & File CSV...")
         csv_file = export_csv()
@@ -82,15 +101,13 @@ def main():
         if not csv_file and not chart_file:
             send_tg("📊 Belum ada data untuk diekspor.")
             return
-        if chart_file: 
-            send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
-        if csv_file: 
-            send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>")
+        if chart_file: send_photo(chart_file, "📊 <b>Grafik Winrate Forward Test</b>")
+        if csv_file: send_document(csv_file, "📁 <b>Data Forward Test (CSV)</b>")
         return
 
     # --- FITUR ANALISA MARKET ---
     if not args.symbol: return
-
+    # ... (sisa kode analisa market & kirim ke mika tetep sama kayak sebelumnya) ...
     try:
         memory_summary = get_memory_summary(args.symbol, args.model)
         raw_data = fetch_all_data(args.symbol)
@@ -156,27 +173,18 @@ def main():
         )
         send_tg(text)
 
-        # ==========================================
-        # --- TAMBAHAN BARU: EKSEKUSI OTOMATIS KE MIKA ---
-        # ==========================================
-        # Kita pilih salah satu setup yang valid buat dikirim ke MIKA
+        # --- EKSEKUSI KE MIKA (JIKA ADA SETUP VALID) ---
         trade_to_execute = None
-        
-        # Prioritas 1: Cek Setup Daily
         if daily.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             trade_to_execute = daily
-        # Prioritas 2: Kalau Daily WAIT, cek Setup Session
         elif session.get("action") in ["BUY_LIMIT", "SELL_LIMIT"]:
             trade_to_execute = session
 
-        # Kalau ada setup yang valid, kirim perintah ke MIKA
         if trade_to_execute:
-            # Hitung rata-rata harga entry buat dikasih ke MIKA
             entry_min = float(trade_to_execute.get("entry_zone_min", 0))
             entry_max = float(trade_to_execute.get("entry_zone_max", 0))
             entry_avg = round((entry_min + entry_max) / 2, 2)
             
-            # Susun perintah bahasa manusia biar MIKA gampang ngertinya
             mika_prompt = (
                 f"Buka aplikasi MetaTrader 5. "
                 f"Pasang order {trade_to_execute.get('action')} untuk {args.symbol} "
@@ -185,8 +193,6 @@ def main():
                 f"Take Profit di {trade_to_execute.get('tp1')}. "
                 f"Gunakan lot 0.01. Tekan tombol Place Order setelah data dimasukkan."
             )
-            
-            # Eksekusi kirim ke MIKA via Cloudflare Tunnel
             print("Mengirim perintah ke MIKA...")
             send_task_to_mika(mika_prompt)
 
