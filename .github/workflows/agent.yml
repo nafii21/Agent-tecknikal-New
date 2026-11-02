@@ -35,6 +35,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          
+          # --- TAMBAHAN BARU UNTUK MIKA ---
+          MIKA_MCP_URL: ${{ secrets.MIKA_MCP_URL }}
+          MIKA_TOKEN: ${{ secrets.MIKA_TOKEN }}
         run: |
           python handler.py --symbol "${{ github.event.inputs.symbol }}" --model "${{ github.event.inputs.model }}" --cmd "${{ github.event.inputs.cmd }}"
 
