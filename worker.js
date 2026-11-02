@@ -48,6 +48,11 @@ export default {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuat laporan dan grafik Winrate...");
         await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "stats");
       }
+      // --- TAMBAHAN BARU: TES MIKA ---
+      else if (data[0] === "menu" && data[1] === "test_mika") {
+        await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Mengirim perintah tes ke MIKA...\nCek layar HP lo!");
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "test_mika");
+      }
       
       return new Response("OK");
     }
@@ -103,7 +108,8 @@ async function triggerGitHub(token, user, repo, symbol = null, model = null, cmd
 function getMainMenu() {
   return { inline_keyboard: [
     [{ text: "🧠 Analisa (DeepSeek)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
-    [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }]
+    [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }],
+    [{ text: "🧪 Test MIKA Bridge", callback_data: "menu|test_mika" }] // <--- TOMBOL BARU
   ]};
 }
 
