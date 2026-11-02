@@ -2,7 +2,7 @@ import os, httpx, json
 
 # URL tunnel dari Cloudflare/Ngrok (tanpa /mcp di akhir)
 MIKA_MCP_URL = os.getenv("MIKA_MCP_URL", "https://mitchell-prices-toll-keywords.trycloudflare.com/mcp")
-MIKA_TOKEN = os.getenv("MIKA_TOKEN", "token_rahasia_dari_mika")
+MIKA_TOKEN = os.getenv("MIKA_TOKEN", "J7Rz_zxdRAjwimGCCNRhx4PicqVnb1KEHX1ibPrZ9pA")
 
 def send_task_to_mika(task_description: str):
     """
