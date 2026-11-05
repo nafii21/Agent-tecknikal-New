@@ -1,5 +1,18 @@
 [
   {
+    "timestamp": "2026-11-05 00:24:21",
+    "symbol": "XAUUSD",
+    "model": "deepseek",
+    "plan_type": "Daily",
+    "action": "BUY_LIMIT",
+    "entry_min": 4060.0,
+    "entry_max": 4064.0,
+    "sl": 4036.5,
+    "tp1": 4113.18,
+    "tp2": 4140.0,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-10-29 12:48:18",
     "symbol": "XAUUSD",
     "model": "nemotron",
