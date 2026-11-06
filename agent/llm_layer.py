@@ -121,14 +121,17 @@ def analyze_nemotron(snapshot_text: str, memory_summary: str) -> dict:
         return {"error": f"Nemotron Error: {str(e)}"}
 
 # ==========================================
-# 2. FUNGSI ANALISA KHUSUS DEEPSEEK (TETEP PAKE SATPAM)
+# 2. FUNGSI ANALISA KHUSUS KIMI K3.1 PRO (TETEP PAKE SATPAM)
 # ==========================================
 def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
+    # Nama fungsi tetep analyze_deepseek biar handler.py ga error
     client = OpenAI(
         base_url="https://api.sakelar.web.id/v1", 
         api_key=os.environ.get("SAKELAR_API_KEY", "")
     )
-    MODEL = "deepseek-v4.1-flash"
+    
+    # --- INI YANG GW GANTI JADI KIMI K3.1 PRO ---
+    MODEL = "kimi-k3.1-pro" 
     user_payload = f"{memory_summary}\n\n=== DATA MARKET SAAT INI ===\n{snapshot_text}"
     
     try:
@@ -140,7 +143,7 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
             ],
             temperature=0.2,
             response_format={"type": "json_object"},
-            timeout=90
+            timeout=120 # Gw naikin timeout jadi 120 detik karena Kimi agak lambat mikir
         )
         result = json.loads(resp.choices[0].message.content)
         
@@ -150,4 +153,5 @@ def analyze_deepseek(snapshot_text: str, memory_summary: str) -> dict:
             
         return result
     except Exception as e:
-        return {"error": f"DeepSeek Error: {str(e)}"}
+        # Gw ganti pesan error dari DeepSeek jadi Kimi
+        return {"error": f"Kimi K3.1 Pro Error: {str(e)}"}
