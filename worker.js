@@ -24,7 +24,7 @@ export default {
 
       // Menu Analisa (Pilih Model)
       if (data[0] === "menu" && data[1].startsWith("analisa")) {
-        const model = data[1] === "analisa_deepseek" ? "deepseek" : "nemotron";
+        const model = data[1] === "analisa_kimi" ? "kimi" : "nemotron";
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
           `Silakan pilih <b>Pair</b> (Analisa ${model.toUpperCase()}):`, getAssetsKeyboard(model));
       }
@@ -107,7 +107,7 @@ async function triggerGitHub(token, user, repo, symbol = null, model = null, cmd
 
 function getMainMenu() {
   return { inline_keyboard: [
-    [{ text: "🧠 Analisa (KIMI K3.1 PRO)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
+    [{ text: "🧠 Analisa (KIMI K3.1 PRO)", callback_data: "menu|analisa_kimi" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
     [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }],
     [{ text: "🧪 Test MIKA Bridge", callback_data: "menu|test_mika" }] // <--- TOMBOL BARU
   ]};
