@@ -107,7 +107,7 @@ async function triggerGitHub(token, user, repo, symbol = null, model = null, cmd
 
 function getMainMenu() {
   return { inline_keyboard: [
-    [{ text: "🧠 Analisa (DeepSeek)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
+    [{ text: "🧠 Analisa (KIMI K3.1 PRO)", callback_data: "menu|analisa_deepseek" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
     [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }],
     [{ text: "🧪 Test MIKA Bridge", callback_data: "menu|test_mika" }] // <--- TOMBOL BARU
   ]};
