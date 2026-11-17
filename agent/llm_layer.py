@@ -1,4 +1,4 @@
-import json, os, base64
+import json, os, base64, re
 from openai import OpenAI
 
 client = OpenAI(
@@ -6,7 +6,8 @@ client = OpenAI(
     api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
 
-# WAJIB pakai model vision. Contoh: Claude Sonnet atau DeepSeek V4
+# PASTIKAN MODEL INI SUPPORT GAMBAR (VISION). 
+# Kalau ragu, coba "claude-3-5-sonnet" atau "gpt-4o".
 MODEL = "gpt-5.6-terra" 
 
 SYSTEM_PROMPT = """
@@ -20,17 +21,17 @@ ATURAN VISUAL SMC:
 4. Cek Trend: Lihat garis EMA 20 (kuning) dan 50 (biru). Harga di atas atau di bawah?
 
 ATURAN STATE MACHINE:
-1. STATUS "WAIT": Jika harga di tengah jalan, belum ada sweep, dan struktur belum jelas. Berikan skenario lanjutan (misal: "Tunggu harga nyentuh Swing High di X").
+1. STATUS "WAIT": Jika harga di tengah jalan, belum ada sweep, dan struktur belum jelas. Berikan skenario lanjutan.
 2. STATUS "PREPARE": Jika harga sedang mendekati area kunci (OB/FVG/Swing).
-3. STATUS "ENTRY": Jika konfirmasi visual jelas (misal: Sweep + CHoCH) dan RR minimal 1:2.
+3. STATUS "ENTRY": Jika konfirmasi visual jelas dan RR minimal 1:2.
 
-OUTPUT HARUS JSON VALID:
+OUTPUT HARUS JSON VALID (TANPA MARKDOWN, TANPA TEKS LAIN):
 {
   "status": "WAIT|PREPARE|ENTRY",
   "context_reason": "Analisa visual struktur yang terlihat di gambar",
   "setup_type": "Liq Sweep | Counter-Trend | Following-Trend | None",
   "bias": "BULLISH|BEARISH",
-  "entry": float (isi 0 jika WAIT/PREPARE),
+  "entry": float,
   "sl": float,
   "tp1": float,
   "tp2": float,
@@ -41,7 +42,6 @@ OUTPUT HARUS JSON VALID:
 
 def analyze(image_path: str, text_data: str) -> dict:
     try:
-        # Konversi gambar ke Base64
         with open(image_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
 
@@ -52,7 +52,7 @@ def analyze(image_path: str, text_data: str) -> dict:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": f"Berikut data pendukung (Session/SMC):\n{text_data}\n\nTolong analisa gambar chart H1 ini."},
+                        {"type": "text", "text": f"Berikut data pendukung:\n{text_data}\n\nAnalisa gambar chart H1 ini."},
                         {
                             "type": "image_url",
                             "image_url": {"url": f"data:image/png;base64,{base64_image}"}
@@ -61,15 +61,26 @@ def analyze(image_path: str, text_data: str) -> dict:
                 }
             ],
             temperature=0.2,
-            response_format={"type": "json_object"},
+            # response_format={"type": "json_object"}, <--- GW HAPUS INI
             max_tokens=1500,
             timeout=120
         )
         
         raw_content = resp.choices[0].message.content
         if not raw_content or raw_content.strip() == "":
-            return {"error": "API ngasih respon kosong. Cek saldo atau nama model Vision."}
+            return {"error": "API ngasih respon kosong."}
             
-        return json.loads(raw_content)
+        # --- SATPAM EKSTRAKSI JSON ---
+        # Kadang AI nambahin teks kayak "Ini hasilnya: { ... }"
+        # Kita cari kurung kurawal pertama dan terakhir
+        start = raw_content.find('{')
+        end = raw_content.rfind('}')
+        
+        if start != -1 and end != -1:
+            json_str = raw_content[start:end+1]
+            return json.loads(json_str)
+        else:
+            return {"error": f"AI gagal ngasih JSON. Jawaban asli: {raw_content[:100]}..."}
+
     except Exception as e:
         return {"error": f"Vision AI Error: {str(e)}"}
