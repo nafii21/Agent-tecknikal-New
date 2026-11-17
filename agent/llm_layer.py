@@ -5,30 +5,40 @@ client = OpenAI(
     base_url="https://api.sakelar.web.id/v1", 
     api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
-MODEL = "gpt-5.6-terra" 
+MODEL = "gpt-5.6-terra" # Pastikan ini model vision
 
 PROMPT_H1 = """
 Kamu adalah "Institutional Sniper AI".
 Tugasmu: Menganalisa GAMBAR CHART H1 dan menentukan status market (WAIT, PREPARE, ENTRY).
-ATURAN: Cari BOS/CHoCH, Sweep, POI, dan Trend.
+ATURAN:
+1. Cari BOS/CHoCH.
+2. Cari Liquidity Sweep.
+3. Cari POI (OB/FVG).
+4. Cek Trend EMA 20 & 50.
+Jika H1 belum ada sweep atau harga di tengah, berikan status "WAIT".
 OUTPUT JSON: {"status": "WAIT|PREPARE|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
 PROMPT_M15 = """
-Kamu adalah "LTF Liquidity Hunter". H1 sedang WAIT.
-Tugasmu: Analisa GAMBAR CHART M15. Cari likuiditas yang BARU SAJA TERAMBIL (Sweep) dan cari CHoCH sebagai konfirmasi reversal.
-OUTPUT JSON: {"status": "WAIT|PREPARE|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
+Kamu adalah "M15 Liquidity Hunter". H1 memberikan status WAIT.
+Tugasmu HANYA SATU: Cari tahu apakah ada likuiditas yang BARU SAJA TERAMBIL (Sweep) di M15, atau apakah harga sedang mendekati POI (OB/FVG) di M15.
+JANGAN menunggu CHoCH di M15! Trigger entry akan dicari di M1.
+Jika Sweep terdeteksi atau harga menyentuh POI, berikan status "PREPARE".
+Jika tidak ada sweep/POI yang dekat, berikan status "WAIT".
+OUTPUT JSON: {"status": "WAIT|PREPARE", "context_reason": "Sebutkan sweep mana yang terambil atau POI mana yang didekati", "setup_type": "Liq Sweep", "bias": "BULLISH|BEARISH", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "rr": 0, "trigger": "Turun ke M1"}
 """
 
 PROMPT_M1 = """
-Kamu adalah "M1 Sniper Trigger". M15 sudah memberikan arah setup (PREPARE/ENTRY).
-Tugasmu: Analisa GAMBAR CHART M1. Cari konfirmasi paling presisi: 
+Kamu adalah "M1 Sniper Trigger". M15 sudah memberikan status PREPARE (ada Sweep/POI).
+Tugasmu: Analisa GAMBAR CHART M1 di area POI/Sweep tersebut.
+Cari konfirmasi entry paling presisi:
 1. Apakah ada CHoCH di M1?
-2. Apakah ada FVG kecil di M1 sebagai area retest?
-3. Apakah ada candle rejection (pinbar/engulfing) di area tersebut?
+2. Apakah ada iFVG (Inverse FVG) yang terbentuk di M1?
+3. Apakah ada candle rejection (pinbar/engulfing)?
 
-Berikan Entry paling akurat (Sniper) berdasarkan konfirmasi M1, dengan SL di balik struktur M1, dan RR minimal 1:2.
-OUTPUT JSON: {"status": "WAIT|PREPARE|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
+Berikan Entry Sniper paling akurat berdasarkan konfirmasi M1, dengan SL di balik struktur M1, dan RR minimal 1:2.
+Jika belum ada konfirmasi M1, berikan status "WAIT".
+OUTPUT JSON: {"status": "WAIT|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
 def _call_vision_api(prompt, image_path, text_data):
