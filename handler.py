@@ -81,21 +81,23 @@ def main():
             send_tg_text(f"❌ M15 Error: {decision_m15['error']}")
             return
             
-        # JIKA M15 WAIT (nggak nemu sweep/POI), STOP.
         if decision_m15.get("status") == "WAIT":
             send_tg_photo(chart_m15, format_signal(decision_m15, "M15 Liquidity") + "\n\n<i>H1 & M15 belum ada setup. Sabar ya.</i>")
             return
 
-        # 3. M1 Trigger (Jika M15 PREPARE)
+        # 3. M1 Trigger (Kirim Konteks M15 ke M1)
         send_tg_text("⏱️ M15 nemu Sweep/POI! Turun ke M1 untuk sniper trigger...")
         chart_m1 = generate_chart(df_m1, args.symbol, "M1")
         
-        decision_m1 = analyze_m1(chart_m1, snapshot_text)
+        # --- SUNTIK KONTEKS M15 KE DALAM DATA M1 ---
+        m15_context = decision_m15.get('context_reason', 'Sweep terdeteksi di M15')
+        m1_text_data = f"{snapshot_text}\n\n[KONTEKS DARI M15]:\n{m15_context}\nGunakan likuiditas M15 ini sebagai target TP."
+        
+        decision_m1 = analyze_m1(chart_m1, m1_text_data)
         if "error" in decision_m1:
             send_tg_text(f"❌ M1 Error: {decision_m1['error']}")
             return
             
-        # Kirim hasil final M1
         final_caption = format_signal(decision_m1, "M1 Trigger")
         send_tg_photo(chart_m1, final_caption)
 
