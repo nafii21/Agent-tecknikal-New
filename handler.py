@@ -35,13 +35,20 @@ def main():
     if not args.symbol: return
 
     try:
-        send_tg_text(f"⏳ Menganalisa <b>{args.symbol}</b> (State Machine SMC)...\nMohon tunggu.")
+        send_tg_text(f"⏳ Menganalisa <b>{args.symbol}</b> (Visual Vision AI)...\nMohon tunggu.")
         
-        # 1. Ambil laporan, dataframe, dan sessions
+        # 1. Ambil data teks & dataframe
         snapshot_text, df_h1, sessions = generate_snapshot(args.symbol)
         
-        # 2. Analisa AI
-        decision = analyze(snapshot_text)
+        # 2. Bikin gambar chart
+        chart_file = generate_chart(df_h1, args.symbol)
+        if not chart_file:
+            send_tg_text("❌ Gagal membuat gambar chart.")
+            return
+
+        # 3. Kirim Gambar + Teks ke Vision AI
+        decision = analyze(chart_file, snapshot_text)
+        
         if "error" in decision:
             send_tg_text(f"❌ {decision['error']}")
             return
@@ -50,7 +57,7 @@ def main():
         emoji = "🎯" if status == "ENTRY" else "⏱️" if status == "PREPARE" else "⏳"
 
         text = (
-            f"🏛️ <b>[HERMES 2.0 - SMC CONTEXT]</b>\n"
+            f"🏛️ <b>[HERMES VISION - SMC]</b>\n"
             f"📊 Pair: <b>{args.symbol}</b>\n"
             f"⚡ Status: <b>{emoji} {status}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -69,12 +76,8 @@ def main():
                 f"⚡ <b>Trigger:</b> {html.escape(decision.get('trigger', '-'))}\n"
             )
         
-        # 3. Bikin Chart & Kirim
-        chart_file = generate_chart(df_h1, args.symbol, sessions)
-        if chart_file and os.path.exists(chart_file):
-            send_tg_photo(chart_file, text)
-        else:
-            send_tg_text(text)
+        # Kirim Gambar + Teks ke Telegram
+        send_tg_photo(chart_file, text)
 
     except Exception as e:
         send_tg_text(f"❌ <b>System Error:</b>\n<code>{html.escape(str(e))}</code>")
