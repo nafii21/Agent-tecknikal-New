@@ -8,7 +8,7 @@ client = OpenAI(
 )
 
 # Pilih model: "kimi-k3.1-pro" atau "deepseek-v4.1-flash"
-MODEL = "kimi-k3.1-pro" 
+MODEL = "anthropic/claude-sonnet-5.5" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
