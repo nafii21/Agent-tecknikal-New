@@ -1,32 +1,28 @@
-import json, os, re
+import json, os
 from openai import OpenAI
 
-# --- KITA PINDAH KE SAKELAR ---
 client = OpenAI(
     base_url="https://api.sakelar.web.id/v1", 
     api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
-
-# Pastikan nama model ini PERSIS sama kayak yang ada di dashboard Sakelar.
-# Contoh format yang biasanya bener: "anthropic/claude-3-5-sonnet"
-MODEL = "anthropic/claude-sonnet-5.5" 
+# Pake model yang stabil dulu
+MODEL = "deepseek-v4.1-flash" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
-Tugasmu: Menentukan status market (WAIT, PREPARE, atau ENTRY) berdasarkan data H1 dan M5.
+Tugasmu: Menentukan status market (WAIT, PREPARE, ENTRY) dan memberikan SKENARIO LANJUTAN.
 
 ATURAN STATE MACHINE:
-1. STATUS "WAIT": Berikan WAIT jika harga jauh dari Session High/Low, atau belum ada BOS/CHoCH baru di H1, atau belum ada Liquidity Sweep.
-2. STATUS "PREPARE": Berikan PREPARE jika harga sedang MENDEKATI (jarak < 0.5%) area Liquidity Sweep, Session High/Low, atau OB/FVG H1 yang valid. 
-3. STATUS "ENTRY": Berikan ENTRY jika:
-   - Konteks H1 valid.
-   - Ada konfirmasi di M5.
-   - RR minimal 1:2.
+1. STATUS "WAIT": Berikan WAIT jika harga jauh dari Session/Swing, belum ada BOS baru, atau belum ada Sweep.
+   -> JIKA STATUS WAIT: Kamu WAJIB menganalisa struktur mentah H1 (Trend EMA & Swing terdekat). 
+   -> Berikan "Skenario Masa Depan": Misal "Harga sedang menuju Swing High 27000. Jika terjadi sweep di sana, pantau CHoCH M5 untuk Sell."
+2. STATUS "PREPARE": Berikan PREPARE jika harga sedang mendekati (<0.5%) Liquidity/Swing/Session.
+3. STATUS "ENTRY": Berikan ENTRY jika Konteks H1 valid + Konfirmasi M5 (FVG/CHoCH) + RR minimal 1:2.
 
-HANYA BALAS DENGAN JSON VALID. TANPA TEKS LAIN.
+OUTPUT HARUS JSON VALID:
 {
   "status": "WAIT|PREPARE|ENTRY",
-  "context_reason": "Alasan kenapa milih status ini",
+  "context_reason": "Analisa struktur saat ini & skenario lanjutan (jelaskan kemana harga akan bergerak)",
   "setup_type": "Liq Sweep | Counter-Trend | Following-Trend | None",
   "bias": "BULLISH|BEARISH",
   "entry": float (isi 0 jika WAIT/PREPARE),
@@ -34,7 +30,7 @@ HANYA BALAS DENGAN JSON VALID. TANPA TEKS LAIN.
   "tp1": float,
   "tp2": float,
   "rr": float,
-  "trigger": "Syarat konfirmasi"
+  "trigger": "Syarat konfirmasi (misal: 'Tunggu sweep di 27000 lalu CHoCH M5')"
 }
 """
 
@@ -46,27 +42,16 @@ def analyze(snapshot_text: str) -> dict:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": snapshot_text},
             ],
-            temperature=0.2,
-            # response_format={"type": "json_object"}, <--- GW MATIIN DULU KARENA KADANG BIKIN PROXY ERROR
-            max_tokens=1500, 
-            timeout=120 
+            temperature=0.3, # Naikin dikit biar AI lebih kreatif nyusun skenario
+            response_format={"type": "json_object"},
+            max_tokens=1500,
+            timeout=90
         )
         
         raw_content = resp.choices[0].message.content
-        
-        # --- SATPAM JSON BARU ---
         if not raw_content or raw_content.strip() == "":
-            return {"error": "API Sakelar ngasih respon KOSONG. Cek saldo lo, atau cek nama model Claude di dashboard Sakelar."}
+            return {"error": "API ngasih respon kosong. Cek saldo Sakelar."}
             
-        # Kadang Claude nambahin teks ```json di awal/akhir, kita bersihin
-        clean_content = raw_content.strip()
-        if clean_content.startswith("```json"):
-            clean_content = clean_content.replace("```json", "").replace("```", "").strip()
-        
-        try:
-            return json.loads(clean_content)
-        except json.JSONDecodeError:
-            return {"error": f"Format JSON rusak. Isi respon API: {raw_content[:100]}..."}
-            
+        return json.loads(raw_content)
     except Exception as e:
-        return {"error": f"Claude API Error: {str(e)}"}
+        return {"error": f"AI Error: {str(e)}"}
