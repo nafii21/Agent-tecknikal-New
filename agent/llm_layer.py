@@ -9,7 +9,7 @@ client = OpenAI(
 
 # Pastikan nama model ini PERSIS sama kayak yang ada di dashboard Sakelar.
 # Contoh format yang biasanya bener: "anthropic/claude-3-5-sonnet"
-MODEL = "anthropic/claude-3-5-sonnet" 
+MODEL = "anthropic/claude-sonnet-5.5" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
