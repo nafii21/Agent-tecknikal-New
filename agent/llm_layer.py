@@ -5,7 +5,7 @@ client = OpenAI(
     base_url="https://openrouter.ai/api/v1", 
     api_key=os.environ.get("OPENROUTER_API_KEY", "")
 )
-MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free" # Pakai Nemotron biar stabil dulu
+MODEL = "anthropic/claude-sonnet-5.5" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
