@@ -3,18 +3,27 @@ import html
 from datetime import datetime
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze
+from agent.charting import generate_chart
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def send_tg(text):
+def send_tg_photo(photo_path, caption):
     if TOKEN and CHAT_ID:
-        if len(text) > 4000: text = text[:4000] + "\n\n<i>... (dipotong)</i>"
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+        url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
         try:
-            httpx.post(url, json=payload, timeout=30)
-        except Exception as e: print(f"❌ Gagal kirim: {e}")
+            with open(photo_path, "rb") as f:
+                files = {"photo": f}
+                data = {"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"}
+                httpx.post(url, data=data, files=files, timeout=30)
+        except Exception as e: print(f"Gagal kirim foto: {e}")
+
+def send_tg_text(text):
+    if TOKEN and CHAT_ID:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        try:
+            httpx.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=30)
+        except Exception as e: print(f"Gagal kirim teks: {e}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -26,13 +35,15 @@ def main():
     if not args.symbol: return
 
     try:
-        send_tg(f"⏳ Menganalisa <b>{args.symbol}</b> (State Machine SMC)...\nMohon tunggu.")
+        send_tg_text(f"⏳ Menganalisa <b>{args.symbol}</b> (State Machine SMC)...\nMohon tunggu.")
         
-        snapshot_text = generate_snapshot(args.symbol)
+        # 1. Ambil laporan, dataframe, dan sessions
+        snapshot_text, df_h1, sessions = generate_snapshot(args.symbol)
+        
+        # 2. Analisa AI
         decision = analyze(snapshot_text)
-        
         if "error" in decision:
-            send_tg(f"❌ {decision['error']}")
+            send_tg_text(f"❌ {decision['error']}")
             return
 
         status = decision.get("status", "WAIT")
@@ -54,15 +65,19 @@ def main():
                 f"📍 Entry: <code>{decision.get('entry', '-')}</code>\n"
                 f"🛑 SL: <code>{decision.get('sl', '-')}</code>\n"
                 f"💎 TP1: <code>{decision.get('tp1', '-')}</code>\n"
-                f"💎 TP2: <code>{decision.get('tp2', '-')}</code>\n"
                 f"📊 RR: <b>{decision.get('rr', '-')}</b>\n"
                 f"⚡ <b>Trigger:</b> {html.escape(decision.get('trigger', '-'))}\n"
             )
         
-        send_tg(text)
+        # 3. Bikin Chart & Kirim
+        chart_file = generate_chart(df_h1, args.symbol, sessions)
+        if chart_file and os.path.exists(chart_file):
+            send_tg_photo(chart_file, text)
+        else:
+            send_tg_text(text)
 
     except Exception as e:
-        send_tg(f"❌ <b>System Error:</b>\n<code>{html.escape(str(e))}</code>")
+        send_tg_text(f"❌ <b>System Error:</b>\n<code>{html.escape(str(e))}</code>")
 
 if __name__ == "__main__":
     main()
