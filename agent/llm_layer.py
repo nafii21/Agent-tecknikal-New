@@ -1,11 +1,14 @@
 import json, os
 from openai import OpenAI
 
+# --- KITA PINDAH KE SAKELAR ---
 client = OpenAI(
-    base_url="https://openrouter.ai/api/v1", 
-    api_key=os.environ.get("OPENROUTER_API_KEY", "")
+    base_url="https://api.sakelar.web.id/v1", 
+    api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
-MODEL = "anthropic/claude-sonnet-5.5" 
+
+# Pilih model: "kimi-k3.1-pro" atau "deepseek-v4.1-flash"
+MODEL = "kimi-k3.1-pro" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
@@ -50,8 +53,9 @@ def analyze(snapshot_text: str) -> dict:
             ],
             temperature=0.2,
             response_format={"type": "json_object"},
-            timeout=90
+            max_tokens=1500, # <--- INI KUNCINYA BIAR GA ERROR 402
+            timeout=120 # Kimi agak lambat, kasih waktu 2 menit
         )
         return json.loads(resp.choices[0].message.content)
     except Exception as e:
-        return {"error": f"AI Error: {str(e)}"}
+        return {"error": f"Kimi Error: {str(e)}"}
