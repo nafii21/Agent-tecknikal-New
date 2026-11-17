@@ -37,8 +37,8 @@ def get_smc_data(df, timeframe_name):
         fvg = smc.fvg(smc_df)
         
         last_bos = bos_choch.dropna(subset=['BOS', 'CHOCH']).tail(1).to_dict('records')
-        active_ob = ob[ob['MitigatedIndex'].isna()].tail(3) if ob is not None else []
-        active_fvg = fvg[fvg['MitigatedIndex'].isna()].tail(3) if fvg is not None else []
+        active_ob = ob[ob['MitigatedIndex'].isna()].tail(2) if ob is not None else []
+        active_fvg = fvg[fvg['MitigatedIndex'].isna()].tail(2) if fvg is not None else []
         
         return {
             "bos_choch": last_bos,
@@ -55,34 +55,41 @@ def generate_snapshot(symbol: str):
     if hasattr(df_h1.columns, 'levels'): df_h1.columns = df_h1.columns.get_level_values(0)
     df_h1 = df_h1.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
     
-    # TARIK M15 UNTUK PENURUNAN TF
     df_m15 = yf.download(ticker, period="5d", interval="15m", progress=False)
     if hasattr(df_m15.columns, 'levels'): df_m15.columns = df_m15.columns.get_level_values(0)
     df_m15 = df_m15.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
 
-    if df_h1.empty or df_m15.empty: raise ValueError("Data kosong.")
+    # TARIK M1 UNTUK TRIGGER
+    df_m1 = yf.download(ticker, period="5d", interval="1m", progress=False)
+    if hasattr(df_m1.columns, 'levels'): df_m1.columns = df_m1.columns.get_level_values(0)
+    df_m1 = df_m1.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
 
-    current_price = round(float(df_m15['close'].iloc[-1]), 2)
+    if df_h1.empty or df_m15.empty or df_m1.empty: raise ValueError("Data kosong.")
+
+    current_price = round(float(df_m1['close'].iloc[-1]), 2)
     
-    # Struktur Mentah H1
     df_h1['ema20'] = df_h1['close'].ewm(span=20).mean()
     df_h1['ema50'] = df_h1['close'].ewm(span=50).mean()
     trend_h1 = "BULLISH" if df_h1['ema20'].iloc[-1] > df_h1['ema50'].iloc[-1] else "BEARISH"
     
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m15 = get_smc_data(df_m15.tail(100), "M15")
+    smc_m1 = get_smc_data(df_m1.tail(100), "M1")
     sessions = get_session_lines(df_h1)
 
     report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
-    report += "===== STRUKTUR H1 =====\n"
+    report += "===== H1 CONTEXT =====\n"
     report += f"Trend: {trend_h1}\n"
     report += f"SMC H1: {smc_h1}\n\n"
     
-    report += "===== SMC M15 (LTF LIQUIDITY) =====\n"
+    report += "===== M15 LIQUIDITY =====\n"
     report += f"SMC M15: {smc_m15}\n\n"
+
+    report += "===== M1 TRIGGER =====\n"
+    report += f"SMC M1: {smc_m1}\n\n"
 
     report += "===== SESSION LINES =====\n"
     for s_name, s_data in sessions.items():
         report += f"{s_name}: High={s_data['high']}, Low={s_data['low']}\n"
 
-    return report, df_h1, df_m15, sessions
+    return report, df_h1, df_m15, df_m1, sessions
