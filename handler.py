@@ -51,7 +51,6 @@ def format_signal(decision, tf_label):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
-    # TAMBAHAN: Biar nerima argumen lama dari Github Actions tanpa error
     parser.add_argument("--model", required=False) 
     parser.add_argument("--cmd", required=False)
     args = parser.parse_args()
@@ -59,24 +58,21 @@ def main():
     if not args.symbol: return
 
     try:
-        # 1. Ambil data & Gambar H1
+        # 1. H1 Context
         send_tg_text(f"⏳ Analisa H1 untuk <b>{args.symbol}</b>...")
         snapshot_text, df_h1, df_m15, df_m1, sessions = generate_snapshot(args.symbol)
         chart_h1 = generate_chart(df_h1, args.symbol, "H1")
-        
-        if not chart_h1: raise ValueError("Gagal bikin chart H1")
         
         decision_h1 = analyze_h1(chart_h1, snapshot_text)
         if "error" in decision_h1:
             send_tg_text(f"❌ H1 Error: {decision_h1['error']}")
             return
 
-        # Jika H1 ENTRY atau PREPARE, kirim hasil H1
         if decision_h1.get("status") in ["PREPARE", "ENTRY"]:
             send_tg_photo(chart_h1, format_signal(decision_h1, "H1 Context"))
             return
 
-        # 2. Jika H1 WAIT, Turun ke M15
+        # 2. M15 Liquidity
         send_tg_text("⏳ H1 WAIT. Turun ke M15 cari likuiditas...")
         chart_m15 = generate_chart(df_m15, args.symbol, "M15")
         
@@ -85,13 +81,13 @@ def main():
             send_tg_text(f"❌ M15 Error: {decision_m15['error']}")
             return
             
-        # Jika M15 WAIT, berarti market benar-benar sepi. Stop.
+        # JIKA M15 WAIT (nggak nemu sweep/POI), STOP.
         if decision_m15.get("status") == "WAIT":
             send_tg_photo(chart_m15, format_signal(decision_m15, "M15 Liquidity") + "\n\n<i>H1 & M15 belum ada setup. Sabar ya.</i>")
             return
 
-        # 3. Jika M15 PREPARE atau ENTRY, Turun ke M1 untuk Trigger Final!
-        send_tg_text("⏱️ M15 nemu likuiditas. Turun ke M1 untuk sniper trigger...")
+        # 3. M1 Trigger (Jika M15 PREPARE)
+        send_tg_text("⏱️ M15 nemu Sweep/POI! Turun ke M1 untuk sniper trigger...")
         chart_m1 = generate_chart(df_m1, args.symbol, "M1")
         
         decision_m1 = analyze_m1(chart_m1, snapshot_text)
