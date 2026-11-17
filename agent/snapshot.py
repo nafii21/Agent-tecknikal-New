@@ -7,11 +7,18 @@ import logging
 
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
+def to_utc(ts_series):
+    """Fungsi aman buat ngubah waktu ke UTC"""
+    s = pd.to_datetime(ts_series)
+    if s.dt.tz is None:
+        return s.dt.tz_localize('UTC')
+    return s.dt.tz_convert('UTC')
+
 # Fungsi buat nentuin Sesi
 def get_session_lines(df):
     """Ngitung High/Low Sesi Asia, London, NY untuk hari ini"""
     df = df.copy()
-    df['ts_utc'] = pd.to_datetime(df['timestamps']).dt.tz_localize('UTC')
+    df['ts_utc'] = to_utc(df['timestamps'])
     
     # Filter hari ini
     today = datetime.now(pytz.utc).date()
@@ -38,7 +45,7 @@ def get_smc_data(df, timeframe_name):
     
     # Siapkan data buat library SMC
     smc_df = df.set_index('timestamps')[['open', 'high', 'low', 'close', 'volume']].copy()
-    smc_df.index = pd.to_datetime(smc_df.index)
+    smc_df.index = pd.to_datetime(smc_df.index).tz_localize(None) # Paksa jadi tz-naive biar SMC ga error
     
     try:
         swing_hl = smc.swing_highs_lows(smc_df, swing_length=10)
