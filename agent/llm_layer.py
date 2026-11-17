@@ -7,7 +7,7 @@ client = OpenAI(
 )
 
 # WAJIB pakai model vision. Contoh: Claude Sonnet atau DeepSeek V4
-MODEL = "anthropic/claude-3-5-sonnet" 
+MODEL = "gpt-5.6-terra" 
 
 SYSTEM_PROMPT = """
 Kamu adalah "Institutional Sniper AI" dengan keahlian SMC/ICT.
