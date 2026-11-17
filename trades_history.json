@@ -1,5 +1,18 @@
 [
   {
+    "timestamp": "2026-11-17 15:17:58",
+    "symbol": "XAUUSD",
+    "model": "nemotron",
+    "plan_type": "Session",
+    "action": "SELL_LIMIT",
+    "entry_min": 3859.0,
+    "entry_max": 3864.0,
+    "sl": 3870.0,
+    "tp1": 3837.0,
+    "tp2": 3831.0,
+    "status": "PENDING"
+  },
+  {
     "timestamp": "2026-11-05 00:24:21",
     "symbol": "XAUUSD",
     "model": "deepseek",
