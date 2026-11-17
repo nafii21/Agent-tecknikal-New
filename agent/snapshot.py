@@ -18,7 +18,6 @@ def get_session_lines(df):
     df['ts_utc'] = to_utc(df['timestamps'])
     today = datetime.now(pytz.utc).date()
     today_df = df[df['ts_utc'].dt.date == today]
-    
     sessions = {}
     for name, start, end in [("Asia", 0, 8), ("London", 7, 16), ("New York", 12, 21)]:
         mask = (today_df['ts_utc'].dt.hour >= start) & (today_df['ts_utc'].dt.hour < end)
@@ -46,7 +45,7 @@ def get_smc_data(df, timeframe_name):
             "active_ob": active_ob.to_dict('records') if isinstance(active_ob, pd.DataFrame) else [],
             "active_fvg": active_fvg.to_dict('records') if isinstance(active_fvg, pd.DataFrame) else []
         }
-    except Exception as e:
+    except Exception:
         return {}
 
 def generate_snapshot(symbol: str):
@@ -63,32 +62,42 @@ def generate_snapshot(symbol: str):
     if df_h1.empty or df_m5.empty: raise ValueError("Data kosong.")
 
     current_price = round(float(df_m5['close'].iloc[-1]), 2)
+    
+    # HITUNG STRUKTUR MENTAH H1 UNTUK CADANGAN AI
+    df_h1['ema20'] = df_h1['close'].ewm(span=20).mean()
+    df_h1['ema50'] = df_h1['close'].ewm(span=50).mean()
+    trend_h1 = "BULLISH" if df_h1['ema20'].iloc[-1] > df_h1['ema50'].iloc[-1] else "BEARISH"
+    
+    recent_swing_high = round(float(df_h1['high'].tail(50).max()), 2)
+    recent_swing_low = round(float(df_h1['low'].tail(50).min()), 2)
+    last_3_highs = [round(float(x), 2) for x in df_h1['high'].tail(50).nlargest(3).tolist()]
+    last_3_lows = [round(float(x), 2) for x in df_h1['low'].tail(50).nsmallest(3).tolist()]
+
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m5 = get_smc_data(df_m5.tail(100), "M5")
     sessions = get_session_lines(df_h1)
 
     report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
+    
+    report += "===== STRUKTUR MENTAH H1 (FALLBACK KONTEKS) =====\n"
+    report += f"Trend EMA: {trend_h1}\n"
+    report += f"Swing High Terdekat: {recent_swing_high}\n"
+    report += f"Swing Low Terdekat: {recent_swing_low}\n"
+    report += f"3 High Terakhir: {last_3_highs}\n"
+    report += f"3 Low Terakhir: {last_3_lows}\n\n"
+
     report += "===== SESSION LINES (H1) =====\n"
     for s_name, s_data in sessions.items():
         report += f"{s_name}: High={s_data['high']}, Low={s_data['low']}\n"
     
-    report += "\n===== SMC H1 (HTF CONTEXT) =====\n"
+    report += "\n===== SMC H1 =====\n"
     report += f"Last BOS/CHoCH: {smc_h1.get('bos_choch', [])}\n"
     report += f"Active OB: {smc_h1.get('active_ob', [])}\n"
     report += f"Active FVG: {smc_h1.get('active_fvg', [])}\n"
 
-    report += "\n===== SMC M5 (LTF) =====\n"
+    report += "\n===== SMC M5 =====\n"
     report += f"Last BOS/CHoCH: {smc_m5.get('bos_choch', [])}\n"
     report += f"Active OB: {smc_m5.get('active_ob', [])}\n"
     report += f"Active FVG: {smc_m5.get('active_fvg', [])}\n"
 
-    try:
-        df_dxy = yf.Ticker("DX-Y.NYB").history(period="5d", interval="1d")
-        df_yield = yf.Ticker("^TNX").history(period="5d", interval="1d")
-        dxy_change = ((df_dxy['Close'].iloc[-1] - df_dxy['Close'].iloc[-2]) / df_dxy['Close'].iloc[-2]) * 100
-        yield_change = ((df_yield['Close'].iloc[-1] - df_yield['Close'].iloc[-2]) / df_yield['Close'].iloc[-2]) * 100
-        report += f"\n===== MAKRO =====\nDXY: {dxy_change:+.2f}% | US10Y: {yield_change:+.2f}%\n"
-    except: pass
-
-    # RETURN DATAFRAME UNTUK CHART
     return report, df_h1, sessions
