@@ -16,35 +16,41 @@ ATURAN:
 3. Cari POI (OB/FVG).
 4. Cek Trend EMA 20 & 50.
 Jika H1 belum ada sweep atau harga di tengah, berikan status "WAIT".
+Jika H1 nemu setup (Sweep/POI), berikan status "PREPARE" atau "ENTRY".
 OUTPUT JSON: {"status": "WAIT|PREPARE|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
 PROMPT_M15 = """
 Kamu adalah "M15 Liquidity Hunter". H1 memberikan status WAIT.
-Tugasmu: 
-1. Identifikasi likuiditas mana yang BARU SAJA TERAMBIL (Sweep) di M15. Apakah itu Session High/Low? Equal Highs/Lows? Sebutkan level harga pastinya di "context_reason" (Contoh: "Swept London Low di 3870.5" atau "Swept Recent Swing Low di 3865").
-2. Cek apakah harga sedang mendekati POI (OB/FVG) di M15.
-
-Jika Sweep terdeteksi ATAU harga menyentuh POI, berikan status "PREPARE". 
+Tugasmu: Cari tahu apakah ada likuiditas yang BARU SAJA TERAMBIL (Sweep) di M15, atau apakah harga sedang mendekati POI (OB/FVG) di M15.
 JANGAN menunggu CHoCH di M15! Trigger entry akan dicari di M1.
+Jika Sweep terdeteksi atau harga menyentuh POI, berikan status "PREPARE".
+Jika tidak ada sweep/POI yang dekat, berikan status "WAIT".
+OUTPUT JSON: {"status": "WAIT|PREPARE", "context_reason": "Sebutkan likuiditas yang di-sweep beserta levelnya", "setup_type": "Liq Sweep", "bias": "BULLISH|BEARISH", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "rr": 0, "trigger": "Turun ke M1"}
+"""
 
-OUTPUT JSON: {"status": "WAIT|PREPARE", "context_reason": "Sebutkan likuiditas mana yang di-sweep beserta level harganya", "setup_type": "Liq Sweep", "bias": "BULLISH|BEARISH", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "rr": 0, "trigger": "Turun ke M1"}
+PROMPT_M5 = """
+Kamu adalah "M5 Trigger". H1 sudah memberikan status PREPARE (ada setup di H1).
+Tugasmu: Analisa GAMBAR CHART M5.
+Cari konfirmasi entry:
+1. Apakah ada CHoCH di M5?
+2. Apakah ada iFVG (Inverse FVG) di M5?
+3. Apakah ada candle rejection (pinbar/engulfing) di area POI H1?
+
+Berikan Entry Sniper, SL di balik struktur M5 (dengan buffer aman), dan RR minimal 1:2.
+Jika belum ada konfirmasi M5, berikan status "WAIT".
+OUTPUT JSON: {"status": "WAIT|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
 PROMPT_M1 = """
 Kamu adalah "M1 Sniper Trigger". M15 sudah memberikan status PREPARE (ada Sweep/POI).
 Tugasmu: Analisa GAMBAR CHART M1 (hanya 30 candle terakhir, zoom in).
-
-KONFIRMASI (JIKA SALAH SATU TERLIHAT, LANGSUNG ENTRY):
-- Candle rejection (Pinbar / Engulfing)
-- iFVG (Inverse FVG) kecil
-- CHoCH kecil (perubahan arah minor)
-
-ATURAN SL/TP LOGIS (WAJIB DIPATUHI):
-1. JANGAN taruh SL terlalu mepet (minimal buffer 2.0 - 3.0 poin dari wick M1 untuk XAUUSD, atau setara 1.5x spread). Gunakan struktur M15 jika M1 terlalu sempit.
-2. TP1 dan TP2 harus menargetkan likuiditas dari timeframe M15 (misal Swing High/Low terdekat di M15), JANGAN hanya menargetkan swing M1 yang jaraknya cuma 1-2 poin.
-3. RR minimal 1:2.
-
+KARENA KITA SUDAH DI AREA KUNCI, KONFIRMASI TIDAK HARUS SEMPURNA:
+1. Cari candle rejection (Pinbar / Engulfing).
+2. ATAU cari iFVG kecil.
+3. ATAU cari CHoCH kecil.
+JIKA SALAH SATU SAJA TERLIHAT, LANGSUNG BERIKAN STATUS "ENTRY".
+ATURAN SL/TP: JANGAN taruh SL terlalu mepet (minimal buffer 2.0-3.0 poin XAUUSD). TP harus menargetkan likuiditas M15.
 OUTPUT JSON: {"status": "WAIT|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
@@ -78,4 +84,5 @@ def _call_vision_api(prompt, image_path, text_data):
 
 def analyze_h1(image_path, text_data): return _call_vision_api(PROMPT_H1, image_path, text_data)
 def analyze_m15(image_path, text_data): return _call_vision_api(PROMPT_M15, image_path, text_data)
+def analyze_m5(image_path, text_data): return _call_vision_api(PROMPT_M5, image_path, text_data)
 def analyze_m1(image_path, text_data): return _call_vision_api(PROMPT_M1, image_path, text_data)
