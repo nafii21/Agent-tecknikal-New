@@ -4,10 +4,9 @@ export default {
     const body = await request.json();
 
     // 1. Handle command /start (FIX BUAT GRUP)
-    // Pakai startsWith biar kebaca walaupun formatnya /start@NamaBot
     if (body.message && body.message.text && body.message.text.startsWith("/start")) {
       await sendTelegram(env.TELEGRAM_BOT_TOKEN, body.message.chat.id, 
-        "🏛️ <b>HERMES Institutional Bot</b>\n\nSilakan pilih menu:", getMainMenu());
+        "🏛️ <b>HERMES Institutional Bot (SMC 2.0)</b>\n\nSilakan pilih menu:", getMainMenu());
       return new Response("OK");
     }
 
@@ -22,21 +21,19 @@ export default {
         body: JSON.stringify({ callback_query_id: cb.id, text: "Memproses..." })
       });
 
-      // Menu Analisa (Pilih Model)
-      if (data[0] === "menu" && data[1].startsWith("analisa")) {
-        const model = data[1] === "analisa_kimi" ? "kimi" : "nemotron";
+      // Menu Analisa (Langsung Pilih Pair)
+      if (data[0] === "menu" && data[1] === "analisa") {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
-          `Silakan pilih <b>Pair</b> (Analisa ${model.toUpperCase()}):`, getAssetsKeyboard(model));
+          "Silakan pilih <b>Pair</b> yang mau dianalisa:", getAssetsKeyboard());
       }
       // Pilih Pair -> Tembak GitHub
       else if (data[0] === "asset") {
         const symbol = data[1];
-        const model = data[2];
         
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, 
-          `⏳ Menganalisa <b>${symbol}</b> pakai <b>${model.toUpperCase()}</b>...\nMohon tunggu.`);
+          `⏳ Menganalisa <b>${symbol}</b> (State Machine SMC)...\nMohon tunggu.`);
         
-        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, model, null);
+        await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, symbol, "nemotron", null);
       }
       // Menu Journal
       else if (data[0] === "menu" && data[1] === "journal") {
@@ -48,7 +45,7 @@ export default {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Membuat laporan dan grafik Winrate...");
         await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "stats");
       }
-      // --- TAMBAHAN BARU: TES MIKA ---
+      // Menu Test MIKA
       else if (data[0] === "menu" && data[1] === "test_mika") {
         await sendTelegram(env.TELEGRAM_BOT_TOKEN, chatId, "⏳ Mengirim perintah tes ke MIKA...\nCek layar HP lo!");
         await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, null, null, "test_mika");
@@ -69,10 +66,8 @@ export default {
     }
 
     console.log("Hari kerja: Memicu Auto-Scan...");
-    const cronModel = "deepseek"; 
-    
-    // --- PENTING: GANTI CHAT ID DI GITHUB KE ID GRUP ---
-    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", cronModel, "cron");
+    // Pake nemotron buat cron
+    await triggerGitHub(env.GITHUB_TOKEN, env.GITHUB_USER, env.GITHUB_REPO, "XAUUSD", "nemotron", "cron");
   }
 };
 
@@ -107,16 +102,16 @@ async function triggerGitHub(token, user, repo, symbol = null, model = null, cmd
 
 function getMainMenu() {
   return { inline_keyboard: [
-    [{ text: "🧠 Analisa (KIMI K3.1 PRO)", callback_data: "menu|analisa_kimi" }, { text: "⚡ Analisa (Nemotron)", callback_data: "menu|analisa_nemotron" }],
+    [{ text: "📊 1. Analisa Market", callback_data: "menu|analisa" }],
     [{ text: "📖 Journal", callback_data: "menu|journal" }, { text: "📈 Statistik & CSV", callback_data: "menu|stats" }],
-    [{ text: "🧪 Test MIKA Bridge", callback_data: "menu|test_mika" }] // <--- TOMBOL BARU
+    [{ text: "🧪 Test MIKA Bridge", callback_data: "menu|test_mika" }]
   ]};
 }
 
-function getAssetsKeyboard(model) {
+function getAssetsKeyboard() {
   return { inline_keyboard: [
-    [{ text: "XAUUSD", callback_data: `asset|XAUUSD|${model}` }, { text: "BTCUSD", callback_data: `asset|BTCUSD|${model}` }],
-    [{ text: "NASDAQ", callback_data: `asset|NASDAQ|${model}` }, { text: "EURUSD", callback_data: `asset|EURUSD|${model}` }],
-    [{ text: "GBPUSD", callback_data: `asset|GBPUSD|${model}` }, { text: "USDJPY", callback_data: `asset|USDJPY|${model}` }]
+    [{ text: "XAUUSD", callback_data: "asset|XAUUSD" }, { text: "BTCUSD", callback_data: "asset|BTCUSD" }],
+    [{ text: "NASDAQ", callback_data: "asset|NASDAQ" }, { text: "EURUSD", callback_data: "asset|EURUSD" }],
+    [{ text: "GBPUSD", callback_data: "asset|GBPUSD" }, { text: "USDJPY", callback_data: "asset|USDJPY" }]
   ]};
 }
