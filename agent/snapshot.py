@@ -1,97 +1,116 @@
 import pandas as pd
-import pandas_ta_classic as ta
-from datetime import datetime
+import yfinance as yf
 import pytz
-from agent.news import get_market_news
+from datetime import datetime
+from smartmoneyconcepts import smc
+import logging
 
-def get_market_session():
-    now_utc = datetime.now(pytz.utc)
-    hour = now_utc.hour
-    
-    # Jadwal Musim Dingin (November - Maret)
-    # London: 08:00 - 17:00 UTC
-    # New York: 13:00 - 22:00 UTC
-    # Overlap (London + NY): 13:00 - 17:00 UTC
-    
-    if 0 <= hour < 8: 
-        return "ASIA (Tokyo)"
-    elif 8 <= hour < 13: 
-        return "LONDON"
-    elif 13 <= hour < 17: 
-        return "OVERLAP (London & New York) - HIGH VOLATILITY"
-    elif 17 <= hour < 22: 
-        return "NEW YORK"
-    else: 
-        return "AFTER HOURS (Low Liquidity)"
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
-def safe_fmt(val, fmt):
+# Fungsi buat nentuin Sesi
+def get_session_lines(df):
+    """Ngitung High/Low Sesi Asia, London, NY untuk hari ini"""
+    df = df.copy()
+    df['ts_utc'] = pd.to_datetime(df['timestamps']).dt.tz_localize('UTC')
+    
+    # Filter hari ini
+    today = datetime.now(pytz.utc).date()
+    today_df = df[df['ts_utc'].dt.date == today]
+    
+    sessions = {}
+    for name, start, end in [
+        ("Asia", 0, 8),      # 00:00 - 08:00 UTC
+        ("London", 7, 16),   # 07:00 - 16:00 UTC
+        ("New York", 12, 21) # 12:00 - 21:00 UTC
+    ]:
+        mask = (today_df['ts_utc'].dt.hour >= start) & (today_df['ts_utc'].dt.hour < end)
+        sdf = today_df[mask]
+        if not sdf.empty:
+            sessions[name] = {
+                "high": round(float(sdf['high'].max()), 2),
+                "low": round(float(sdf['low'].min()), 2)
+            }
+    return sessions
+
+def get_smc_data(df, timeframe_name):
+    """Deteksi SMC pakai library smartmoneyconcepts"""
+    if len(df) < 20: return {}
+    
+    # Siapkan data buat library SMC
+    smc_df = df.set_index('timestamps')[['open', 'high', 'low', 'close', 'volume']].copy()
+    smc_df.index = pd.to_datetime(smc_df.index)
+    
     try:
-        if val is None or pd.isna(val): return "N/A"
-        return f"{float(val):{fmt}}"
+        swing_hl = smc.swing_highs_lows(smc_df, swing_length=10)
+        bos_choch = smc.bos_choch(smc_df, swing_hl)
+        ob = smc.ob(smc_df, swing_hl)
+        fvg = smc.fvg(smc_df)
+        
+        # Ambil data terakhir yang relevan
+        last_bos = bos_choch.dropna(subset=['BOS', 'CHOCH']).tail(1).to_dict('records')
+        active_ob = ob[ob['MitigatedIndex'].isna()].tail(3) if ob is not None else []
+        active_fvg = fvg[fvg['MitigatedIndex'].isna()].tail(3) if fvg is not None else []
+        
+        return {
+            "bos_choch": last_bos,
+            "active_ob": active_ob.to_dict('records') if isinstance(active_ob, pd.DataFrame) else [],
+            "active_fvg": active_fvg.to_dict('records') if isinstance(active_fvg, pd.DataFrame) else []
+        }
+    except Exception as e:
+        print(f"SMC Error {timeframe_name}: {e}")
+        return {}
+
+def generate_snapshot(symbol: str) -> str:
+    # 1. Tarik Data H1 (HTF Context)
+    ticker = "GC=F" if symbol.upper() == "XAUUSD" else "NQ=F"
+    df_h1 = yf.download(ticker, period="1mo", interval="1h", progress=False)
+    if hasattr(df_h1.columns, 'levels'): df_h1.columns = df_h1.columns.get_level_values(0)
+    df_h1 = df_h1.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+    
+    # 2. Tarik Data M5 (LTF Confirmation)
+    df_m5 = yf.download(ticker, period="5d", interval="5m", progress=False)
+    if hasattr(df_m5.columns, 'levels'): df_m5.columns = df_m5.columns.get_level_values(0)
+    df_m5 = df_m5.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+
+    if df_h1.empty or df_m5.empty:
+        raise ValueError("Data market gagal diambil (H1/M5 kosong).")
+
+    current_price = round(float(df_m5['close'].iloc[-1]), 2)
+
+    # 3. Hitung SMC H1 & M5
+    smc_h1 = get_smc_data(df_h1.tail(100), "H1")
+    smc_m5 = get_smc_data(df_m5.tail(100), "M5")
+    
+    # 4. Hitung Session Lines H1
+    sessions = get_session_lines(df_h1)
+
+    # 5. Susun Laporan
+    report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
+    
+    report += "===== SESSION LINES (H1) =====\n"
+    for s_name, s_data in sessions.items():
+        report += f"{s_name}: High={s_data['high']}, Low={s_data['low']}\n"
+    
+    report += "\n===== SMC H1 (HTF CONTEXT) =====\n"
+    report += f"Last BOS/CHoCH: {smc_h1.get('bos_choch', [])}\n"
+    report += f"Active OB: {smc_h1.get('active_ob', [])}\n"
+    report += f"Active FVG: {smc_h1.get('active_fvg', [])}\n"
+
+    report += "\n===== SMC M5 (LTF CONFIRMATION) =====\n"
+    report += f"Last BOS/CHoCH: {smc_m5.get('bos_choch', [])}\n"
+    report += f"Active OB: {smc_m5.get('active_ob', [])}\n"
+    report += f"Active FVG: {smc_m5.get('active_fvg', [])}\n"
+
+    # 6. Ambil Data Fundamental (Makro)
+    try:
+        df_dxy = yf.Ticker("DX-Y.NYB").history(period="5d", interval="1d")
+        df_yield = yf.Ticker("^TNX").history(period="5d", interval="1d")
+        dxy_change = ((df_dxy['Close'].iloc[-1] - df_dxy['Close'].iloc[-2]) / df_dxy['Close'].iloc[-2]) * 100
+        yield_change = ((df_yield['Close'].iloc[-1] - df_yield['Close'].iloc[-2]) / df_yield['Close'].iloc[-2]) * 100
+        
+        report += f"\n===== MAKRO =====\n"
+        report += f"DXY: {dxy_change:+.2f}% | US10Y: {yield_change:+.2f}%\n"
     except:
-        return "N/A"
+        pass
 
-def generate_snapshot(symbol: str, raw_data: dict) -> str:
-    main_data = raw_data["main"]
-    macro = raw_data["macro"]
-    
-    # --- SENSOR ERROR ---
-    if "D1" not in main_data or "H4" not in main_data: 
-        raise ValueError("Data D1 atau H4 kosong! Tidak bisa lanjut analisa.")
-    
-    now_wib = datetime.now(pytz.timezone('Asia/Jakarta')).strftime("%A, %Y-%m-%d %H:%M WIB")
-    session = get_market_session()
-    
-    report = f"===== WAKTU & SESI =====\n"
-    report += f"Waktu Server (WIB): {now_wib}\n"
-    report += f"Sesi Aktif: {session}\n\n"
-    
-    # 1. Loop Multi-Timeframe
-    for tf in ["D1", "H4", "H1", "M15"]:
-        if tf not in main_data: continue
-        df = main_data[tf].copy()
-        
-        df['ema20'] = ta.ema(df['close'], length=20)
-        df['ema50'] = ta.ema(df['close'], length=50)
-        df['rsi'] = ta.rsi(df['close'], length=14)
-        df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
-        
-        last = df.iloc[-1]
-        trend = "UP" if last['close'] > last['ema20'] else "DOWN"
-        
-        df['swing_high'] = df['high'].rolling(window=10, center=True).max()
-        df['swing_low'] = df['low'].rolling(window=10, center=True).min()
-        
-        last_swing_high = df['swing_high'].dropna().iloc[-1] if not df['swing_high'].dropna().empty else last['high']
-        last_swing_low = df['swing_low'].dropna().iloc[-1] if not df['swing_low'].dropna().empty else last['low']
-        
-        report += f"===== {symbol} {tf} =====\n"
-        report += f"Close: {safe_fmt(last['close'], '.2f')} | EMA20: {safe_fmt(last['ema20'], '.2f')} | EMA50: {safe_fmt(last['ema50'], '.2f')}\n"
-        report += f"RSI: {safe_fmt(last['rsi'], '.1f')} | ATR: {safe_fmt(last['atr'], '.2f')} | Trend: {trend}\n"
-        report += f"Swing High: {safe_fmt(last_swing_high, '.2f')} | Swing Low: {safe_fmt(last_swing_low, '.2f')}\n"
-        
-        if tf in ["D1", "H4"]:
-            prev = df.iloc[-2]
-            high, low, close = prev['high'], prev['low'], prev['close']
-            p = (high + low + close) / 3
-            r1, s1 = (2*p) - low, (2*p) - high
-            
-            diff = high - low
-            fibo_382 = high - (diff * 0.382)
-            fibo_50 = high - (diff * 0.5)
-            fibo_618 = high - (diff * 0.618)
-            fibo_786 = high - (diff * 0.786)
-            
-            report += f"\n[ LEVEL FIBO & PIVOT {tf} ]\n"
-            report += f"Pivot: {safe_fmt(p, '.2f')} | R1: {safe_fmt(r1, '.2f')} | S1: {safe_fmt(s1, '.2f')}\n"
-            report += f"Fibo 38.2%: {safe_fmt(fibo_382, '.2f')} | Fibo 50%: {safe_fmt(fibo_50, '.2f')} | Fibo 61.8%: {safe_fmt(fibo_618, '.2f')} | Fibo 78.6%: {safe_fmt(fibo_786, '.2f')}\n\n"
-
-    report += "===== KONTEKS MAKRO (FUNDAMENTAL) =====\n"
-    if "DXY" in macro: report += f"DXY (Dollar): {macro['DXY']['price']} ({safe_fmt(macro['DXY']['change_pct'], '+.2f')}%)\n"
-    if "US10Y" in macro: report += f"US10Y (Bond Yield): {macro['US10Y']['price']}% ({safe_fmt(macro['US10Y']['change_pct'], '+.2f')}%)\n"
-    report += "\n"
-    
-    news_text = get_market_news(symbol)
-    report += news_text
-    
     return report
