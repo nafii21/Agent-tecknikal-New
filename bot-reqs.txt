@@ -6,3 +6,4 @@ smartmoneyconcepts>=0.0.26
 pytz>=2024.1
 mplfinance>=0.12.10b0
 matplotlib>=3.8.0
+six
