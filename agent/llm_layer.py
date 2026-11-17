@@ -5,9 +5,8 @@ client = OpenAI(
     base_url="https://api.sakelar.web.id/v1", 
     api_key=os.environ.get("SAKELAR_API_KEY", "")
 )
-MODEL = "gpt-5.6-terra" # Pastikan model ini support Vision (baca gambar)
+MODEL = "gpt-5.6-terra" 
 
-# --- PROMPT H1 (Konteks Utama) ---
 PROMPT_H1 = """
 Kamu adalah "Institutional Sniper AI".
 Tugasmu: Menganalisa GAMBAR CHART H1 dan menentukan status market (WAIT, PREPARE, ENTRY).
@@ -20,29 +19,32 @@ Jika H1 belum ada sweep atau harga di tengah, berikan status "WAIT".
 OUTPUT JSON: {"status": "WAIT|PREPARE|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
-# --- PROMPT M15 (Pencarian Likuiditas) ---
 PROMPT_M15 = """
 Kamu adalah "M15 Liquidity Hunter". H1 memberikan status WAIT.
-Tugasmu HANYA SATU: Cari tahu apakah ada likuiditas yang BARU SAJA TERAMBIL (Sweep) di M15, atau apakah harga sedang mendekati POI (OB/FVG) di M15.
+Tugasmu: 
+1. Identifikasi likuiditas mana yang BARU SAJA TERAMBIL (Sweep) di M15. Apakah itu Session High/Low? Equal Highs/Lows? Sebutkan level harga pastinya di "context_reason" (Contoh: "Swept London Low di 3870.5" atau "Swept Recent Swing Low di 3865").
+2. Cek apakah harga sedang mendekati POI (OB/FVG) di M15.
+
+Jika Sweep terdeteksi ATAU harga menyentuh POI, berikan status "PREPARE". 
 JANGAN menunggu CHoCH di M15! Trigger entry akan dicari di M1.
-Jika Sweep terdeteksi atau harga menyentuh POI, berikan status "PREPARE".
-Jika tidak ada sweep/POI yang dekat, berikan status "WAIT".
-OUTPUT JSON: {"status": "WAIT|PREPARE", "context_reason": "Sebutkan sweep mana yang terambil atau POI mana yang didekati", "setup_type": "Liq Sweep", "bias": "BULLISH|BEARISH", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "rr": 0, "trigger": "Turun ke M1"}
+
+OUTPUT JSON: {"status": "WAIT|PREPARE", "context_reason": "Sebutkan likuiditas mana yang di-sweep beserta level harganya", "setup_type": "Liq Sweep", "bias": "BULLISH|BEARISH", "entry": 0, "sl": 0, "tp1": 0, "tp2": 0, "rr": 0, "trigger": "Turun ke M1"}
 """
 
-# --- PROMPT M1 (Sniper Trigger - Lebih Longgar) ---
 PROMPT_M1 = """
 Kamu adalah "M1 Sniper Trigger". M15 sudah memberikan status PREPARE (ada Sweep/POI).
 Tugasmu: Analisa GAMBAR CHART M1 (hanya 30 candle terakhir, zoom in).
 
-KARENA KITA SUDAH DI AREA KUNCI (Sweep/POI), KONFIRMASI TIDAK HARUS SEMPURNA:
-1. Cari candle rejection (Pinbar / Engulfing) di area tersebut.
-2. ATAU cari iFVG (Inverse FVG) kecil.
-3. ATAU cari CHoCH kecil (perubahan arah minor).
-JIKA SALAH SATU SAJA TERLIHAT (meskipun kecil), LANGSUNG BERIKAN STATUS "ENTRY".
+KONFIRMASI (JIKA SALAH SATU TERLIHAT, LANGSUNG ENTRY):
+- Candle rejection (Pinbar / Engulfing)
+- iFVG (Inverse FVG) kecil
+- CHoCH kecil (perubahan arah minor)
 
-Berikan Entry Sniper, SL di balik struktur M1 (misal di bawah wick), dan RR minimal 1:2.
-Jika benar-benar tidak ada tanda-tanda pembalikan sama sekali (harga jalan lurus), barulah berikan status "WAIT".
+ATURAN SL/TP LOGIS (WAJIB DIPATUHI):
+1. JANGAN taruh SL terlalu mepet (minimal buffer 2.0 - 3.0 poin dari wick M1 untuk XAUUSD, atau setara 1.5x spread). Gunakan struktur M15 jika M1 terlalu sempit.
+2. TP1 dan TP2 harus menargetkan likuiditas dari timeframe M15 (misal Swing High/Low terdekat di M15), JANGAN hanya menargetkan swing M1 yang jaraknya cuma 1-2 poin.
+3. RR minimal 1:2.
+
 OUTPUT JSON: {"status": "WAIT|ENTRY", "context_reason": "...", "setup_type": "...", "bias": "BULLISH|BEARISH", "entry": float, "sl": float, "tp1": float, "tp2": float, "rr": float, "trigger": "..."}
 """
 
