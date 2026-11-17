@@ -51,20 +51,20 @@ def get_smc_data(df, timeframe_name):
 def generate_snapshot(symbol: str):
     ticker = "GC=F" if symbol.upper() == "XAUUSD" else "NQ=F"
     
+    # Tarik H1, M15, M5, M1
     df_h1 = yf.download(ticker, period="1mo", interval="1h", progress=False)
-    if hasattr(df_h1.columns, 'levels'): df_h1.columns = df_h1.columns.get_level_values(0)
-    df_h1 = df_h1.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-    
     df_m15 = yf.download(ticker, period="5d", interval="15m", progress=False)
-    if hasattr(df_m15.columns, 'levels'): df_m15.columns = df_m15.columns.get_level_values(0)
-    df_m15 = df_m15.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
-
-    # TARIK M1 UNTUK TRIGGER
+    df_m5 = yf.download(ticker, period="5d", interval="5m", progress=False)
     df_m1 = yf.download(ticker, period="5d", interval="1m", progress=False)
-    if hasattr(df_m1.columns, 'levels'): df_m1.columns = df_m1.columns.get_level_values(0)
-    df_m1 = df_m1.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
 
-    if df_h1.empty or df_m15.empty or df_m1.empty: raise ValueError("Data kosong.")
+    def clean_df(df):
+        if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
+        return df.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+
+    df_h1, df_m15, df_m5, df_m1 = clean_df(df_h1), clean_df(df_m15), clean_df(df_m5), clean_df(df_m1)
+
+    if df_h1.empty or df_m15.empty or df_m5.empty or df_m1.empty: 
+        raise ValueError("Data kosong.")
 
     current_price = round(float(df_m1['close'].iloc[-1]), 2)
     
@@ -74,6 +74,7 @@ def generate_snapshot(symbol: str):
     
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m15 = get_smc_data(df_m15.tail(100), "M15")
+    smc_m5 = get_smc_data(df_m5.tail(100), "M5")
     smc_m1 = get_smc_data(df_m1.tail(100), "M1")
     sessions = get_session_lines(df_h1)
 
@@ -85,11 +86,14 @@ def generate_snapshot(symbol: str):
     report += "===== M15 LIQUIDITY =====\n"
     report += f"SMC M15: {smc_m15}\n\n"
 
-    report += "===== M1 TRIGGER =====\n"
+    report += "===== M5 TRIGGER DATA =====\n"
+    report += f"SMC M5: {smc_m5}\n\n"
+
+    report += "===== M1 TRIGGER DATA =====\n"
     report += f"SMC M1: {smc_m1}\n\n"
 
     report += "===== SESSION LINES =====\n"
     for s_name, s_data in sessions.items():
         report += f"{s_name}: High={s_data['high']}, Low={s_data['low']}\n"
 
-    return report, df_h1, df_m15, df_m1, sessions
+    return report, df_h1, df_m15, df_m5, df_m1, sessions
