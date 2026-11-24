@@ -3,6 +3,7 @@ import html
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze_h1, analyze_m15, analyze_m5, analyze_m1
 from agent.charting import generate_chart
+from agent.exness_executor import place_limit_order # <--- Import Eksekutor
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -48,71 +49,84 @@ def format_signal(decision, tf_label):
         )
     return text
 
+def execute_to_exness(decision, symbol):
+    """Fungsi buat ngeksekusi sinyal ke Exness"""
+    action = decision.get("action", "") # BUY_LIMIT / SELL_LIMIT
+    if action not in ["BUY_LIMIT", "SELL_LIMIT"]:
+        return "\n\n❌ Eksekusi Exness dibatalkan: Action bukan Limit Order."
+        
+    entry = decision.get("entry", 0)
+    sl = decision.get("sl", 0)
+    tp = decision.get("tp1", 0)
+    
+    # Format simbol Exness (misal XAUUSD jadi XAUUSD)
+    exness_symbol = symbol.upper() 
+    
+    res = place_limit_order(exness_symbol, action, entry, sl, tp, volume=0.01)
+    
+    if res.get("success"):
+        return f"\n\n✅ <b>EXNESS ORDER SUKSES</b>\nOrder ID: <code>{res['order_id']}</code>\nLot: 0.01"
+    else:
+        return f"\n\n❌ <b>EXNESS ERROR:</b>\n<code>{html.escape(str(res.get('error')))}</code>"
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
-    parser.add_argument("--model", required=False) 
-    parser.add_argument("--cmd", required=False)
     args = parser.parse_args()
 
     if not args.symbol: return
+    symbol = args.symbol
 
     try:
         # 1. Ambil Data & Gambar H1
-        send_tg_text(f"⏳ Analisa H1 untuk <b>{args.symbol}</b>...")
-        snapshot_text, df_h1, df_m15, df_m5, df_m1, sessions = generate_snapshot(args.symbol)
-        chart_h1 = generate_chart(df_h1, args.symbol, "H1")
+        send_tg_text(f"⏳ Analisa H1 untuk <b>{symbol}</b>...")
+        snapshot_text, df_h1, df_m15, df_m5, df_m1, sessions = generate_snapshot(symbol)
+        chart_h1 = generate_chart(df_h1, symbol, "H1")
         
         decision_h1 = analyze_h1(chart_h1, snapshot_text)
-        if "error" in decision_h1:
-            send_tg_text(f"❌ H1 Error: {decision_h1['error']}")
-            return
-
-        # --- ALUR 1: JIKA H1 ADA SETUP, KONFIRMASI PAKE M5 ---
+        
+        # --- ALUR 1: H1 SETUP -> KONFIRMASI M5 ---
         if decision_h1.get("status") in ["PREPARE", "ENTRY"]:
             send_tg_text("⏱️ H1 nemu setup! Turun ke M5 untuk konfirmasi trigger...")
-            chart_m5 = generate_chart(df_m5, args.symbol, "M5")
+            chart_m5 = generate_chart(df_m5, symbol, "M5")
             
-            # Suntik konteks H1 ke M5
             h1_context = decision_h1.get('context_reason', 'Setup di H1')
-            m5_text_data = f"{snapshot_text}\n\n[KONTEKS DARI H1]:\n{h1_context}\nGunakan setup H1 ini untuk mencari trigger di M5."
+            m5_text_data = f"{snapshot_text}\n\n[KONTEKS DARI H1]:\n{h1_context}"
             
             decision_m5 = analyze_m5(chart_m5, m5_text_data)
             final_caption = format_signal(decision_m5, "M5 Trigger")
             
-            if decision_m5.get("status") == "WAIT":
-                final_caption += "\n\n<i>H1 ada setup, tapi M5 belum ngasih trigger. Sabar ya.</i>"
+            if decision_m5.get("status") == "ENTRY":
+                # Tembak Exness!
+                exec_msg = execute_to_exness(decision_m5, symbol)
+                final_caption += exec_msg
                 
             send_tg_photo(chart_m5, final_caption)
             return
 
-        # --- ALUR 2: JIKA H1 WAIT, TURUN KE M15 LALU M1 ---
+        # --- ALUR 2: H1 WAIT -> M15 -> M1 ---
         send_tg_text("⏳ H1 WAIT. Turun ke M15 cari likuiditas...")
-        chart_m15 = generate_chart(df_m15, args.symbol, "M15")
-        
+        chart_m15 = generate_chart(df_m15, symbol, "M15")
         decision_m15 = analyze_m15(chart_m15, snapshot_text)
-        if "error" in decision_m15:
-            send_tg_text(f"❌ M15 Error: {decision_m15['error']}")
-            return
             
         if decision_m15.get("status") in ["PREPARE", "ENTRY"]:
             send_tg_text("⏱️ M15 nemu Sweep/POI! Turun ke M1 untuk sniper trigger...")
-            chart_m1 = generate_chart(df_m1, args.symbol, "M1")
+            chart_m1 = generate_chart(df_m1, symbol, "M1")
             
-            # Suntik konteks M15 ke M1
-            m15_context = decision_m15.get('context_reason', 'Sweep terdeteksi di M15')
-            m1_text_data = f"{snapshot_text}\n\n[KONTEKS DARI M15]:\n{m15_context}\nGunakan likuiditas M15 ini sebagai target TP."
+            m15_context = decision_m15.get('context_reason', 'Sweep terdeteksi')
+            m1_text_data = f"{snapshot_text}\n\n[KONTEKS DARI M15]:\n{m15_context}"
             
             decision_m1 = analyze_m1(chart_m1, m1_text_data)
             final_caption = format_signal(decision_m1, "M1 Trigger")
             
-            if decision_m1.get("status") == "WAIT":
-                final_caption += "\n\n<i>M15 nemu likuiditas, tapi M1 belum ngasih trigger. Sabar ya.</i>"
+            if decision_m1.get("status") == "ENTRY":
+                # Tembak Exness!
+                exec_msg = execute_to_exness(decision_m1, symbol)
+                final_caption += exec_msg
                 
             send_tg_photo(chart_m1, final_caption)
             return
             
-        # Jika M15 juga WAIT
         send_tg_photo(chart_m15, format_signal(decision_m15, "M15 Liquidity") + "\n\n<i>H1 & M15 belum ada setup. Sabar ya.</i>")
 
     except Exception as e:
