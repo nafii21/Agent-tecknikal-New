@@ -72,6 +72,14 @@ def execute_to_exness(decision, symbol):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
+    
+    # ==========================================
+    # 🔥 FIX: TAMBAHIN 2 BARIS INI BIAR GAK ERROR 🔥
+    # ==========================================
+    parser.add_argument("--model", default="nemotron") 
+    parser.add_argument("--cmd", default="cron")
+    # ==========================================
+    
     args = parser.parse_args()
 
     if not args.symbol: return
@@ -130,7 +138,7 @@ def main():
         send_tg_photo(chart_m15, format_signal(decision_m15, "M15 Liquidity") + "\n\n<i>H1 & M15 belum ada setup. Sabar ya.</i>")
 
     except Exception as e:
-        send_tg_text(f"❌ <b>System Error:</b>\n<code>{html.escape(str(e))}</code>")
+        send_tg_text(f"❌ <b>System Error:</b>\n{html.escape(str(e))}")
 
 if __name__ == "__main__":
     main()
