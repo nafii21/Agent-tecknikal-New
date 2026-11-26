@@ -3,93 +3,72 @@ import os, time, hmac, hashlib, json, httpx
 EXNESS_API_KEY = os.getenv("EXNESS_API_KEY")
 EXNESS_API_SECRET = os.getenv("EXNESS_API_SECRET")
 EXNESS_ACCOUNT_ID = os.getenv("EXNESS_ACCOUNT_ID")
+# ⚠️ PENTING: Ganti dengan host dari dashboard API Exness lu (contoh: ap-4decef67.exness.com)
+EXNESS_HOST = os.getenv("EXNESS_HOST", "ap-4decef67.exness.com") 
 
-BASE_URL = "https://api.exness.com" 
+def _generate_signature(timestamp, method, path, body_str, idempotency_key):
+    """Bikin signature HMAC sesuai dokumentasi Exness API"""
+    # Format signature: timestamp + method + path + body + idempotency_key
+    message = f"{timestamp}{method}{path}{body_str}{idempotency_key}"
+    return hmac.new(
+        EXNESS_API_SECRET.encode('utf-8'),
+        message.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
 
-def _send_order_request(payload: dict):
-    """Fungsi bantuan buat nembak API Exness + Bikin HMAC Signature"""
+def _send_order_request(payload: dict, idempotency_key: str):
+    """Fungsi bantuan buat nembak API Exness"""
     if not all([EXNESS_API_KEY, EXNESS_API_SECRET, EXNESS_ACCOUNT_ID]):
         return {"error": "Exness API credentials kosong di GitHub Secrets."}
 
     body_str = json.dumps(payload, separators=(',', ':'))
     timestamp = str(int(time.time() * 1000))
     
-    # 🔥 FIX 1: Endpoint yang bener buat create order
-    path = "/api/v1/trade/create" 
-
-    # Format signature: timestamp + method + path + body
-    message = timestamp + "POST" + path + body_str
-    signature = hmac.new(
-        EXNESS_API_SECRET.encode('utf-8'),
-        message.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
+    # 🔥 FIX: Path yang bener buat buka posisi
+    path = f"/v1/trading/accounts/{EXNESS_ACCOUNT_ID}/positions"
+    signature = _generate_signature(timestamp, "POST", path, body_str, idempotency_key)
 
     headers = {
-        "EXNESS-API-KEY": EXNESS_API_KEY,
-        "EXNESS-API-SIGNATURE": signature,
-        "EXNESS-API-TIMESTAMP": timestamp,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "EXN-API-KEY": EXNESS_API_KEY,
+        "EXN-TIMESTAMP": timestamp,
+        "EXN-SIGN": signature,
+        "EXN-SIGN-VERSION": "1",
+        "EXN-IDEMPOTENCY-KEY": idempotency_key
     }
 
     try:
-        url = f"{BASE_URL}{path}"
+        url = f"https://{EXNESS_HOST}{path}"
         resp = httpx.post(url, headers=headers, content=body_str, timeout=15)
         
-        # 🔥 FIX 2: Cek status code dulu sebelum parsing JSON
-        if resp.status_code not in [200, 201]:
-            # Kalau bukan 200/201, balikin text aslinya biar kita tau error dari Exness
-            return {"error": f"Exness HTTP {resp.status_code}: {resp.text[:200]}"}
+        if resp.status_code not in [200, 201, 202]:
+            return {"error": f"Exness HTTP {resp.status_code}: {resp.text[:300]}"}
             
-        # Coba parsing JSON
-        try:
-            resp_json = resp.json()
-        except json.JSONDecodeError:
-            # Kalau gagal parsing JSON (misal dapet HTML), balikin potongan text-nya
-            return {"error": f"Respon bukan JSON (kemungkinan URL salah). Isi: {resp.text[:100]}"}
+        resp_json = resp.json()
         
-        # Cek apakah Exness ngasih error di dalam JSON-nya
-        if "error" in resp_json:
-            return {"error": f"Exness API Error: {resp_json}"}
+        # Exness ngasih ACK dulu, bukan final status
+        if "operation_id" in resp_json:
+            return {"success": True, "operation_id": resp_json["operation_id"], "status": "ACK_RECEIVED"}
             
-        return {"success": True, "order_id": resp_json.get("orderId", "Unknown"), "data": resp_json}
+        return {"success": True, "data": resp_json}
             
     except Exception as e:
         return {"error": f"Request Error: {str(e)}"}
 
-
-def place_limit_order(symbol: str, action: str, price: float, sl: float, tp: float, volume: float = 0.01):
-    """Fungsi buat nembak Limit Order ke Exness API"""
-    order_side = "buy" if "BUY" in action.upper() else "sell"
-    
-    payload = {
-        "accountId": EXNESS_ACCOUNT_ID,
-        "symbol": symbol.upper(),
-        "type": order_side, # Exness biasanya pakai 'buy'/'sell', bukan 'side'
-        "orderType": "Limit",
-        "price": float(price),
-        "stopLoss": float(sl),
-        "takeProfit": float(tp),
-        "volume": float(volume),
-        "timeInForce": "GTC" 
-    }
-    
-    return _send_order_request(payload)
-
-
 def place_market_order(symbol: str, action: str, sl: float, tp: float, volume: float = 0.01):
-    """🔥 FUNGSI BARU: Market Order dengan parameter yang benar 🔥"""
+    """🔥 Market Order sesuai dokumentasi Exness API 🔥"""
     order_side = "buy" if "BUY" in action.upper() else "sell"
     
+    # 📌 Dokumentasi Exness: body cuma butuh instrument, side, volume, SL, TP
     payload = {
-        "accountId": EXNESS_ACCOUNT_ID,
-        "symbol": symbol.upper(),
-        "type": order_side, 
-        "orderType": "Market", # Pake 'orderType' biar lebih jelas
-        "stopLoss": float(sl),
-        "takeProfit": float(tp),
-        "volume": float(volume),
-        "timeInForce": "IOC" # 🔥 FIX 3: Market order wajib IOC
+        "instrument": symbol.upper(),
+        "side": order_side,
+        "volume": str(volume), # Exness minta string buat volume
+        "stopLoss": str(sl),
+        "takeProfit": str(tp)
     }
     
-    return _send_order_request(payload)
+    idempotency_key = f"order-{int(time.time())}-{order_side}"
+    return _send_order_request(payload, idempotency_key)
+
+# Fungsi place_limit_order biarkan dulu, atau hapus jika tidak dipakai
