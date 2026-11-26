@@ -3,7 +3,8 @@ import html
 from agent.snapshot import generate_snapshot
 from agent.llm_layer import analyze_h1, analyze_m15, analyze_m5, analyze_m1
 from agent.charting import generate_chart
-from agent.exness_executor import place_limit_order # <--- Import Eksekutor
+# 🔥 IMPORT DIUBAH: Sekarang manggil place_market_order
+from agent.exness_executor import place_market_order 
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -50,22 +51,29 @@ def format_signal(decision, tf_label):
     return text
 
 def execute_to_exness(decision, symbol):
-    """Fungsi buat ngeksekusi sinyal ke Exness"""
-    action = decision.get("action", "") # BUY_LIMIT / SELL_LIMIT
-    if action not in ["BUY_LIMIT", "SELL_LIMIT"]:
-        return "\n\n❌ Eksekusi Exness dibatalkan: Action bukan Limit Order."
+    """🔥 FUNGSI BARU: Eksekusi Market Order (Langsung Entry) 🔥"""
+    action = str(decision.get("action", "")).upper()
+    bias = str(decision.get("bias", "")).upper()
+    
+    # Tentukan arah Market (BUY / SELL) berdasarkan Bias atau Action dari AI
+    if "SELL" in action or "BEARISH" in bias:
+        market_action = "SELL"
+    elif "BUY" in action or "BULLISH" in bias:
+        market_action = "BUY"
+    else:
+        return "\n\n❌ Eksekusi Exness dibatalkan: AI tidak memberikan arah BUY/SELL yang jelas."
         
-    entry = decision.get("entry", 0)
     sl = decision.get("sl", 0)
     tp = decision.get("tp1", 0)
     
-    # Format simbol Exness (misal XAUUSD jadi XAUUSD)
+    # Format simbol Exness
     exness_symbol = symbol.upper() 
     
-    res = place_limit_order(exness_symbol, action, entry, sl, tp, volume=0.01)
+    # Panggil fungsi market order
+    res = place_market_order(exness_symbol, market_action, sl, tp, volume=0.01)
     
     if res.get("success"):
-        return f"\n\n✅ <b>EXNESS ORDER SUKSES</b>\nOrder ID: <code>{res['order_id']}</code>\nLot: 0.01"
+        return f"\n\n✅ <b>EXNESS MARKET ORDER SUKSES</b>\nOrder ID: <code>{res.get('order_id', 'UNKNOWN')}</code>\nArah: <b>{market_action}</b>\nLot: 0.01"
     else:
         return f"\n\n❌ <b>EXNESS ERROR:</b>\n<code>{html.escape(str(res.get('error')))}</code>"
 
@@ -73,12 +81,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol")
     
-    # ==========================================
-    # 🔥 FIX: TAMBAHIN 2 BARIS INI BIAR GAK ERROR 🔥
-    # ==========================================
+    # FIX ARGUMEN BIAR GITHUB ACTION GAK ERROR
     parser.add_argument("--model", default="nemotron") 
     parser.add_argument("--cmd", default="cron")
-    # ==========================================
     
     args = parser.parse_args()
 
