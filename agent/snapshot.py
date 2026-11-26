@@ -8,8 +8,8 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
-EXNESS_API_KEY = os.getenv("EXNESS_API_KEY")
-BASE_URL = "https://api.exness.com"
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TWELVE_DATA_URL = "https://api.twelvedata.com/time_series"
 
 def to_utc(ts_series):
     s = pd.to_datetime(ts_series)
@@ -53,79 +53,100 @@ def get_smc_data(df, timeframe_name):
         logging.error(f"Error SMC {timeframe_name}: {e}")
         return {}
 
-def fetch_exness_data(symbol, interval, count):
-    """🔥 FUNGSI BARU: Narik data dari Exness dengan percobaan nama simbol 🔥"""
-    if not EXNESS_API_KEY:
-        raise ValueError("EXNESS_API_KEY kosong di GitHub Secrets.")
-
-    # Daftar kemungkinan nama simbol (sesuaikan dengan akun Exness lu)
-    # Gw tambahin .raw, .pro, dll buat jaga-jaga
-    possible_symbols = [
-        symbol.upper(), 
-        f"{symbol.upper()}m", 
-        f"{symbol.upper()}c", 
-        f"{symbol.upper()}r", 
-        f"{symbol.upper()}z",
-        f"{symbol.upper()}.raw",
-        f"{symbol.upper()}.pro"
-    ]
+def fetch_twelvedata(symbol, interval, count=100):
+    """🔥 FUNGSI BARU: Narik data dari Twelve Data 🔥"""
+    if not TWELVE_DATA_API_KEY:
+        raise ValueError("TWELVE_DATA_API_KEY kosong di GitHub Secrets.")
     
-    url = f"{BASE_URL}/api/v1/candles" # Endpoint yang benar
-    headers = {"EXNESS-API-KEY": EXNESS_API_KEY}
-
-    for sym in possible_symbols:
-        # Parameter yang benar sesuai dokumentasi
-        params = {
-            "symbol": sym,
-            "interval": interval,
-            "count": count # Gunakan 'count', bukan 'limit'
-        }
-        try:
-            resp = httpx.get(url, headers=headers, params=params, timeout=15)
-            # Lanjut kalau status 200, kalau 4xx (simbol salah) coba simbol berikutnya
-            if resp.status_code == 200:
-                data = resp.json().get("data", [])
-                if data:
-                    logging.info(f"Data ditemukan dengan simbol: {sym}")
-                    df = pd.DataFrame(data)
-                    # Response Exness punya kolom: time, open, high, low, close, volume[reference:9]
-                    df = df.rename(columns={"time": "timestamps"})
-                    # Konversi timestamp ke datetime (formatnya ISO string)
-                    df['timestamps'] = pd.to_datetime(df['timestamps'])
-                    return df
-        except Exception as e:
-            logging.warning(f"Gagal coba simbol {sym}: {e}")
-            continue # Coba simbol selanjutnya
-
-    logging.error(f"Semua percobaan simbol gagal untuk {symbol}.")
-    return pd.DataFrame()
+    # 1. Mapping Simbol (Twelve Data butuh format spesifik)
+    symbol_map = {
+        "XAUUSD": "XAU/USD",
+        "BTCUSD": "BTC/USD",
+        "NASDAQ": "NDX", # Nasdaq 100
+        "EURUSD": "EUR/USD",
+        "GBPUSD": "GBP/USD",
+        "USDJPY": "USD/JPY"
+    }
+    td_symbol = symbol_map.get(symbol.upper(), f"{symbol[:3]}/{symbol[3:]}") # Fallback (misal EURUSD -> EUR/USD)
+    
+    # 2. Mapping Interval (Twelve Data pakai 'min' bukan 'm')
+    interval_map = {
+        "1h": "1h",
+        "15m": "15min",
+        "5m": "5min",
+        "1m": "1min"
+    }
+    td_interval = interval_map.get(interval, interval)
+    
+    params = {
+        "symbol": td_symbol,
+        "interval": td_interval,
+        "outputsize": count,
+        "apikey": TWELVE_DATA_API_KEY,
+        "timezone": "UTC"
+    }
+    
+    try:
+        resp = httpx.get(TWELVE_DATA_URL, params=params, timeout=15)
+        data = resp.json()
+        
+        # Cek kalau API ngebalikin error (misal limit habis atau simbol salah)
+        if "status" in data and data["status"] == "error":
+            logging.error(f"TwelveData Error ({td_symbol}): {data.get('message')}")
+            return pd.DataFrame()
+            
+        values = data.get("values", [])
+        if not values:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(values)
+        
+        # Rename kolom dari Twelve Data ke format yang kita butuh
+        df = df.rename(columns={"datetime": "timestamps"})
+        
+        # Twelve Data ngasih data dari terbaru ke terlama, kita harus urutin dari terlama ke terbaru
+        df['timestamps'] = pd.to_datetime(df['timestamps'])
+        df = df.sort_values(by='timestamps').reset_index(drop=True)
+        
+        # Pastiin tipe datanya float (karena Twelve Data ngasih string)
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            else:
+                df[col] = 0.0 # Kadang Forex nggak ada volume, kita isi 0
+                
+        return df[['timestamps', 'open', 'high', 'low', 'close', 'volume']]
+        
+    except Exception as e:
+        logging.error(f"Gagal narik data {symbol} {interval} dari TwelveData: {e}")
+        return pd.DataFrame()
 
 
 def generate_snapshot(symbol: str):
-    exness_symbol = symbol.upper()
-    
-    # 🔥 TARIK DATA DENGAN NAMA SIMBOL YANG FLEKSIBEL 🔥
-    # Gunakan interval '1h' dan 'count' sesuai dokumentasi API Exness[reference:10]
-    df_h1 = fetch_exness_data(exness_symbol, interval="1h", count=100)
-    df_m15 = fetch_exness_data(exness_symbol, interval="15m", count=100)
-    df_m5 = fetch_exness_data(exness_symbol, interval="5m", count=100)
-    df_m1 = fetch_exness_data(exness_symbol, interval="1m", count=100)
+    # 🔥 TARIK DATA DARI TWELVE DATA 🔥
+    df_h1 = fetch_twelvedata(symbol, interval="1h", count=100)
+    df_m15 = fetch_twelvedata(symbol, interval="15m", count=100)
+    df_m5 = fetch_twelvedata(symbol, interval="5m", count=100)
+    df_m1 = fetch_twelvedata(symbol, interval="1m", count=100)
 
     if df_h1.empty or df_m15.empty or df_m5.empty or df_m1.empty: 
-        raise ValueError(f"Data kosong dari Exness untuk {symbol}. Coba cek nama simbol di akun Exness Anda (misal XAUUSDm).")
+        raise ValueError(f"Data kosong dari TwelveData untuk {symbol}. Cek limit API atau nama simbol.")
 
     current_price = round(float(df_m1['close'].iloc[-1]), 2)
     
+    # Hitung EMA buat Trend H1
     df_h1['ema20'] = df_h1['close'].ewm(span=20).mean()
     df_h1['ema50'] = df_h1['close'].ewm(span=50).mean()
     trend_h1 = "BULLISH" if df_h1['ema20'].iloc[-1] > df_h1['ema50'].iloc[-1] else "BEARISH"
     
+    # Hitung SMC
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m15 = get_smc_data(df_m15.tail(100), "M15")
     smc_m5 = get_smc_data(df_m5.tail(100), "M5")
     smc_m1 = get_smc_data(df_m1.tail(100), "M1")
     sessions = get_session_lines(df_h1)
 
+    # Bikin Report buat AI
     report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
     report += "===== H1 CONTEXT =====\n"
     report += f"Trend: {trend_h1}\n"
