@@ -53,93 +53,79 @@ def get_smc_data(df, timeframe_name):
         logging.error(f"Error SMC {timeframe_name}: {e}")
         return {}
 
-def fetch_exness_data(symbol, interval, limit):
-    """🔥 FUNGSI BARU: Narik data Candlestick langsung dari Exness 🔥"""
+def fetch_exness_data(symbol, interval, count):
+    """🔥 FUNGSI BARU: Narik data dari Exness dengan percobaan nama simbol 🔥"""
     if not EXNESS_API_KEY:
         raise ValueError("EXNESS_API_KEY kosong di GitHub Secrets.")
 
-    # ⚠️ SESUAIKAN ENDPOINT & PARAMETER DENGAN DOKUMENTASI API EXNESS LU ⚠️
-    # Contoh di bawah ini adalah standar REST API broker (bisa beda path/params)
-    url = f"{BASE_URL}/api/v1/market/candles" 
+    # Daftar kemungkinan nama simbol (sesuaikan dengan akun Exness lu)
+    # Gw tambahin .raw, .pro, dll buat jaga-jaga
+    possible_symbols = [
+        symbol.upper(), 
+        f"{symbol.upper()}m", 
+        f"{symbol.upper()}c", 
+        f"{symbol.upper()}r", 
+        f"{symbol.upper()}z",
+        f"{symbol.upper()}.raw",
+        f"{symbol.upper()}.pro"
+    ]
     
-    headers = {
-        "EXNESS-API-KEY": EXNESS_API_KEY,
-        "Content-Type": "application/json"
-    }
-    
-    # Mapping interval (sesuaikan string interval dengan dokumentasi Exness, misal '1h', '15m')
-    params = {
-        "symbol": symbol.upper(),
-        "interval": interval,
-        "limit": limit
-    }
+    url = f"{BASE_URL}/api/v1/candles" # Endpoint yang benar
+    headers = {"EXNESS-API-KEY": EXNESS_API_KEY}
 
-    try:
-        resp = httpx.get(url, headers=headers, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json().get("data", []) # Asumsi response Exness ada di key "data"
-        
-        if not data:
-            return pd.DataFrame()
+    for sym in possible_symbols:
+        # Parameter yang benar sesuai dokumentasi
+        params = {
+            "symbol": sym,
+            "interval": interval,
+            "count": count # Gunakan 'count', bukan 'limit'
+        }
+        try:
+            resp = httpx.get(url, headers=headers, params=params, timeout=15)
+            # Lanjut kalau status 200, kalau 4xx (simbol salah) coba simbol berikutnya
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data:
+                    logging.info(f"Data ditemukan dengan simbol: {sym}")
+                    df = pd.DataFrame(data)
+                    # Response Exness punya kolom: time, open, high, low, close, volume[reference:9]
+                    df = df.rename(columns={"time": "timestamps"})
+                    # Konversi timestamp ke datetime (formatnya ISO string)
+                    df['timestamps'] = pd.to_datetime(df['timestamps'])
+                    return df
+        except Exception as e:
+            logging.warning(f"Gagal coba simbol {sym}: {e}")
+            continue # Coba simbol selanjutnya
 
-        # Konversi JSON ke DataFrame
-        df = pd.DataFrame(data)
-        
-        # ⚠️ SESUAIKAN NAMA KOLOM DENGAN RESPONSE EXNESS LU ⚠️
-        # Exness biasanya ngasih timestamp (ms), open, high, low, close, volume
-        df = df.rename(columns={
-            "time": "timestamps", "timestamp": "timestamps", 
-            "open": "open", "high": "high", "low": "low", 
-            "close": "close", "volume": "volume"
-        })
-        
-        # Pastiin timestamp jadi datetime
-        if 'timestamps' in df.columns:
-            # Kalau timestamp-nya angka (milidetik), ubah ke datetime
-            if pd.api.types.is_numeric_dtype(df['timestamps']):
-                df['timestamps'] = pd.to_datetime(df['timestamps'], unit='ms')
-            else:
-                df['timestamps'] = pd.to_datetime(df['timestamps'])
-                
-        return df
-
-    except Exception as e:
-        logging.error(f"Gagal narik data {symbol} {interval} dari Exness: {e}")
-        # Fallback: kembalikan DataFrame kosong biar error-nya ketangkep di generate_snapshot
-        return pd.DataFrame()
+    logging.error(f"Semua percobaan simbol gagal untuk {symbol}.")
+    return pd.DataFrame()
 
 
 def generate_snapshot(symbol: str):
-    # Format simbol Exness (misal XAUUSD)
     exness_symbol = symbol.upper()
     
-    # 🔥 TARIK DATA LANGSUNG DARI EXNESS 🔥
-    # Limit 100 candle terakhir, sesuaikan interval dengan API Exness
-    df_h1 = fetch_exness_data(exness_symbol, interval="1h", limit=100)
-    df_m15 = fetch_exness_data(exness_symbol, interval="15m", limit=100)
-    df_m5 = fetch_exness_data(exness_symbol, interval="5m", limit=100)
-    df_m1 = fetch_exness_data(exness_symbol, interval="1m", limit=100)
+    # 🔥 TARIK DATA DENGAN NAMA SIMBOL YANG FLEKSIBEL 🔥
+    # Gunakan interval '1h' dan 'count' sesuai dokumentasi API Exness[reference:10]
+    df_h1 = fetch_exness_data(exness_symbol, interval="1h", count=100)
+    df_m15 = fetch_exness_data(exness_symbol, interval="15m", count=100)
+    df_m5 = fetch_exness_data(exness_symbol, interval="5m", count=100)
+    df_m1 = fetch_exness_data(exness_symbol, interval="1m", count=100)
 
-    # Pastiin data nggak kosong
     if df_h1.empty or df_m15.empty or df_m5.empty or df_m1.empty: 
-        raise ValueError(f"Data kosong dari Exness untuk {symbol}. Cek dokumentasi API atau koneksi.")
+        raise ValueError(f"Data kosong dari Exness untuk {symbol}. Coba cek nama simbol di akun Exness Anda (misal XAUUSDm).")
 
-    # Ambil harga terakhir dari M1
     current_price = round(float(df_m1['close'].iloc[-1]), 2)
     
-    # Hitung EMA buat Trend H1
     df_h1['ema20'] = df_h1['close'].ewm(span=20).mean()
     df_h1['ema50'] = df_h1['close'].ewm(span=50).mean()
     trend_h1 = "BULLISH" if df_h1['ema20'].iloc[-1] > df_h1['ema50'].iloc[-1] else "BEARISH"
     
-    # Hitung SMC
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m15 = get_smc_data(df_m15.tail(100), "M15")
     smc_m5 = get_smc_data(df_m5.tail(100), "M5")
     smc_m1 = get_smc_data(df_m1.tail(100), "M1")
     sessions = get_session_lines(df_h1)
 
-    # Bikin Report buat AI
     report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
     report += "===== H1 CONTEXT =====\n"
     report += f"Trend: {trend_h1}\n"
