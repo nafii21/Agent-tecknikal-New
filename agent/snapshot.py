@@ -1,11 +1,15 @@
 import pandas as pd
-import yfinance as yf
+import httpx
 import pytz
+import os
 from datetime import datetime
 from smartmoneyconcepts import smc
 import logging
 
-logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.basicConfig(level=logging.INFO)
+
+EXNESS_API_KEY = os.getenv("EXNESS_API_KEY")
+BASE_URL = "https://api.exness.com"
 
 def to_utc(ts_series):
     s = pd.to_datetime(ts_series)
@@ -45,39 +49,97 @@ def get_smc_data(df, timeframe_name):
             "active_ob": active_ob.to_dict('records') if isinstance(active_ob, pd.DataFrame) else [],
             "active_fvg": active_fvg.to_dict('records') if isinstance(active_fvg, pd.DataFrame) else []
         }
-    except Exception:
+    except Exception as e:
+        logging.error(f"Error SMC {timeframe_name}: {e}")
         return {}
 
-def generate_snapshot(symbol: str):
-    ticker = "GC=F" if symbol.upper() == "XAUUSD" else "NQ=F"
+def fetch_exness_data(symbol, interval, limit):
+    """🔥 FUNGSI BARU: Narik data Candlestick langsung dari Exness 🔥"""
+    if not EXNESS_API_KEY:
+        raise ValueError("EXNESS_API_KEY kosong di GitHub Secrets.")
+
+    # ⚠️ SESUAIKAN ENDPOINT & PARAMETER DENGAN DOKUMENTASI API EXNESS LU ⚠️
+    # Contoh di bawah ini adalah standar REST API broker (bisa beda path/params)
+    url = f"{BASE_URL}/api/v1/market/candles" 
     
-    # Tarik H1, M15, M5, M1
-    df_h1 = yf.download(ticker, period="1mo", interval="1h", progress=False)
-    df_m15 = yf.download(ticker, period="5d", interval="15m", progress=False)
-    df_m5 = yf.download(ticker, period="5d", interval="5m", progress=False)
-    df_m1 = yf.download(ticker, period="5d", interval="1m", progress=False)
+    headers = {
+        "EXNESS-API-KEY": EXNESS_API_KEY,
+        "Content-Type": "application/json"
+    }
+    
+    # Mapping interval (sesuaikan string interval dengan dokumentasi Exness, misal '1h', '15m')
+    params = {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "limit": limit
+    }
 
-    def clean_df(df):
-        if hasattr(df.columns, 'levels'): df.columns = df.columns.get_level_values(0)
-        return df.reset_index().rename(columns={"Datetime": "timestamps", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+    try:
+        resp = httpx.get(url, headers=headers, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json().get("data", []) # Asumsi response Exness ada di key "data"
+        
+        if not data:
+            return pd.DataFrame()
 
-    df_h1, df_m15, df_m5, df_m1 = clean_df(df_h1), clean_df(df_m15), clean_df(df_m5), clean_df(df_m1)
+        # Konversi JSON ke DataFrame
+        df = pd.DataFrame(data)
+        
+        # ⚠️ SESUAIKAN NAMA KOLOM DENGAN RESPONSE EXNESS LU ⚠️
+        # Exness biasanya ngasih timestamp (ms), open, high, low, close, volume
+        df = df.rename(columns={
+            "time": "timestamps", "timestamp": "timestamps", 
+            "open": "open", "high": "high", "low": "low", 
+            "close": "close", "volume": "volume"
+        })
+        
+        # Pastiin timestamp jadi datetime
+        if 'timestamps' in df.columns:
+            # Kalau timestamp-nya angka (milidetik), ubah ke datetime
+            if pd.api.types.is_numeric_dtype(df['timestamps']):
+                df['timestamps'] = pd.to_datetime(df['timestamps'], unit='ms')
+            else:
+                df['timestamps'] = pd.to_datetime(df['timestamps'])
+                
+        return df
 
+    except Exception as e:
+        logging.error(f"Gagal narik data {symbol} {interval} dari Exness: {e}")
+        # Fallback: kembalikan DataFrame kosong biar error-nya ketangkep di generate_snapshot
+        return pd.DataFrame()
+
+
+def generate_snapshot(symbol: str):
+    # Format simbol Exness (misal XAUUSD)
+    exness_symbol = symbol.upper()
+    
+    # 🔥 TARIK DATA LANGSUNG DARI EXNESS 🔥
+    # Limit 100 candle terakhir, sesuaikan interval dengan API Exness
+    df_h1 = fetch_exness_data(exness_symbol, interval="1h", limit=100)
+    df_m15 = fetch_exness_data(exness_symbol, interval="15m", limit=100)
+    df_m5 = fetch_exness_data(exness_symbol, interval="5m", limit=100)
+    df_m1 = fetch_exness_data(exness_symbol, interval="1m", limit=100)
+
+    # Pastiin data nggak kosong
     if df_h1.empty or df_m15.empty or df_m5.empty or df_m1.empty: 
-        raise ValueError("Data kosong.")
+        raise ValueError(f"Data kosong dari Exness untuk {symbol}. Cek dokumentasi API atau koneksi.")
 
+    # Ambil harga terakhir dari M1
     current_price = round(float(df_m1['close'].iloc[-1]), 2)
     
+    # Hitung EMA buat Trend H1
     df_h1['ema20'] = df_h1['close'].ewm(span=20).mean()
     df_h1['ema50'] = df_h1['close'].ewm(span=50).mean()
     trend_h1 = "BULLISH" if df_h1['ema20'].iloc[-1] > df_h1['ema50'].iloc[-1] else "BEARISH"
     
+    # Hitung SMC
     smc_h1 = get_smc_data(df_h1.tail(100), "H1")
     smc_m15 = get_smc_data(df_m15.tail(100), "M15")
     smc_m5 = get_smc_data(df_m5.tail(100), "M5")
     smc_m1 = get_smc_data(df_m1.tail(100), "M1")
     sessions = get_session_lines(df_h1)
 
+    # Bikin Report buat AI
     report = f"===== CURRENT PRICE =====\n{symbol}: {current_price}\n\n"
     report += "===== H1 CONTEXT =====\n"
     report += f"Trend: {trend_h1}\n"
